@@ -738,18 +738,14 @@ end
 --------------------------------------------------------------------------------
 
 function Advertiser:OnRegister()
-    -- Register for PLAYER_LOGIN to reset features AFTER SavedVariables are loaded
-    -- OnRegister runs before SavedVariables load, so any resets here get overwritten
+    -- Register for PLAYER_LOGIN to initialize state AFTER SavedVariables are loaded
     if not self.loginFrame then
         self.loginFrame = CreateFrame("Frame")
         self.loginFrame:RegisterEvent("PLAYER_LOGIN")
         self.loginFrame:SetScript("OnEvent", function(_, event)
             if event == "PLAYER_LOGIN" then
-                -- Now SavedVariables are fully loaded, reset all auto features
+                -- Initialize state from saved settings (don't reset them)
                 local db = getDB()
-                db.autoInvite = false
-                db.autoSendEnabled = false
-                db.autoReplyEnabled = false
                 Advertiser:UpdateState()
             end
         end)

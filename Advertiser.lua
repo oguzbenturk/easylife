@@ -421,6 +421,9 @@ function Advertiser:StartAutoSend()
     
     local interval = math.max(10, db.autoSendInterval or 60)
     
+    -- Mark as running
+    self.autoSendRunning = true
+    
     -- Send first message IMMEDIATELY (not queued - direct send)
     if not state.onCooldown then
         EasyLife:Print("|cff00FF00[Auto-Send]|r Sending first message now...")
@@ -431,8 +434,9 @@ function Advertiser:StartAutoSend()
     
     -- Then queue subsequent messages on interval
     autoSendTimer = C_Timer.NewTicker(interval, function()
-        if not getDB().autoSendEnabled or not getDB().enabled then
+        if not getDB().autoSendEnabled or not getDB().enabled or not Advertiser.autoSendRunning then
             if autoSendTimer then autoSendTimer:Cancel(); autoSendTimer = nil end
+            Advertiser.autoSendRunning = false
             return
         end
         -- Only queue if not already queued and not on cooldown
@@ -449,11 +453,13 @@ function Advertiser:StopAutoSend()
         autoSendTimer:Cancel()
         autoSendTimer = nil
     end
+    self.autoSendRunning = false
     state.messageQueued = false
     state.queuedAt = nil
     -- Disable any-key detection
     self:EnableAnyKeyDetection(false)
     self:UpdateFloatingButton()
+    EasyLife:Print("|cffFF6600[Auto-Send]|r Stopped")
 end
 
 -- Queue a message (sets flag, button will glow)
@@ -1268,7 +1274,7 @@ local function BuildSendMessageTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     local autoBox = CreateFrame("Frame", nil, container, "BackdropTemplate")
     autoBox:SetPoint("TOPLEFT", 0, y)
-    autoBox:SetSize(W + 8, 70)
+    autoBox:SetSize(W + 8, 90)
     autoBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1285,20 +1291,44 @@ local function BuildSendMessageTab(content, db)
     local autoSendCb = CreateCheckbox(autoBox, 8, -24, "Enable", db.autoSendEnabled, function(self)
         local d = getDB()
         d.autoSendEnabled = self:GetChecked()
-        if d.autoSendEnabled then
-            Advertiser:StartAutoSend()
-        else
-            Advertiser:StopAutoSend()
-        end
         RefreshHeader()
     end)
     autoSendCb.text:SetTextColor(0.3, 1, 0.3)
     
+    -- Start/Stop button
+    local autoStartBtn = CreateFrame("Button", nil, autoBox, "UIPanelButtonTemplate")
+    autoStartBtn:SetSize(70, 20)
+    autoStartBtn:SetPoint("TOPLEFT", 90, -22)
+    
+    local function UpdateAutoStartButton()
+        if Advertiser.autoSendRunning then
+            autoStartBtn:SetText("|cffFF4444Stop|r")
+        else
+            autoStartBtn:SetText("|cff00FF00Start|r")
+        end
+    end
+    
+    autoStartBtn:SetScript("OnClick", function()
+        local d = getDB()
+        if Advertiser.autoSendRunning then
+            Advertiser:StopAutoSend()
+        else
+            if d.autoSendEnabled then
+                Advertiser:StartAutoSend()
+            else
+                EasyLife:Print("|cffFF6600[Auto-Send]|r Enable checkbox first!")
+            end
+        end
+        UpdateAutoStartButton()
+        RefreshHeader()
+    end)
+    UpdateAutoStartButton()
+    
     local autoDesc = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    autoDesc:SetPoint("TOPLEFT", 90, -26)
-    autoDesc:SetWidth(W - 90)
+    autoDesc:SetPoint("TOPLEFT", 165, -26)
+    autoDesc:SetWidth(W - 165)
     autoDesc:SetJustifyH("LEFT")
-    autoDesc:SetText("|cff888888First msg instant, then press any key to send next.|r")
+    autoDesc:SetText("|cff888888Press any key to send queued msg|r")
     
     -- Interval row (single setting - time between sends)
     local intLabel = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -1316,7 +1346,7 @@ local function BuildSendMessageTab(content, db)
     intSec:SetPoint("LEFT", intEdit:GetParent(), "RIGHT", 6, 0)
     intSec:SetText("|cff888888sec|r")
     
-    y = y - 78
+    y = y - 98
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- QUICK ACCESS

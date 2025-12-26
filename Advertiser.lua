@@ -1343,38 +1343,6 @@ local function BuildSendMessageTab(content, db)
     
     content:SetHeight(math.abs(y) + 20)
 end
-    clearKeyBtn:SetText("Clear")
-    clearKeyBtn:SetScript("OnClick", function()
-        getDB().keybindKey = nil
-        keyText:SetText("|cff666666Click to set|r")
-        Advertiser:SetupKeybind()
-    end)
-    
-    content:HookScript("OnHide", function()
-        capturing = false
-        keyBtn:EnableKeyboard(false)
-        keyText:SetText(db.keybindKey or "|cff666666Click to set|r")
-        keyBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    end)
-    
-    y = y - 40
-    
-    -- Stats
-    local statsLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    statsLabel:SetPoint("TOPLEFT", 12, y)
-    statsLabel:SetText("|cffFFD700Sent:|r " .. state.adsSent .. "  |cffFFD700Invites:|r " .. state.invitesSent)
-    
-    local ticker = C_Timer.NewTicker(1, function()
-        if statsLabel and statsLabel:IsVisible() then
-            statsLabel:SetText("|cffFFD700Sent:|r " .. state.adsSent .. "  |cffFFD700Invites:|r " .. state.invitesSent)
-        end
-    end)
-    content:HookScript("OnHide", function() ticker:Cancel() end)
-    
-    y = y - 30
-    
-    content:SetHeight(math.abs(y) + 20)
-end
 
 --------------------------------------------------------------------------------
 -- TAB: AUTO REPLY

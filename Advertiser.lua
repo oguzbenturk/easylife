@@ -14,8 +14,8 @@ local DEFAULTS = {
     -- Auto Invite
     autoInvite = false,
     autoInviteDelay = 0.5,
-    keywordsWhisper = "inv, invite",
-    keywordsChannel = "inv, invite",
+    whisperKeywords = {},  -- Rule-based: list of keywords for whispers
+    channelKeywords = {},  -- Rule-based: list of keywords for channels
     monitoredChannels = {},
     -- Send Message
     adMessage = "",
@@ -74,6 +74,35 @@ local function getDB()
     if db._firstRunShown == nil then
         db._firstRunShown = false
     end
+    
+    -- Migration: Convert old comma-separated keywords to new list format
+    if db.keywordsWhisper and type(db.keywordsWhisper) == "string" then
+        local keywords = {}
+        for keyword in db.keywordsWhisper:gmatch("[^,]+") do
+            keyword = keyword:gsub("^%s*(.-)%s*$", "%1")  -- trim
+            if keyword ~= "" and keyword ~= "inv" and keyword ~= "invite" then
+                table.insert(keywords, keyword)
+            end
+        end
+        db.whisperKeywords = keywords
+        db.keywordsWhisper = nil
+    end
+    if db.keywordsChannel and type(db.keywordsChannel) == "string" then
+        local keywords = {}
+        for keyword in db.keywordsChannel:gmatch("[^,]+") do
+            keyword = keyword:gsub("^%s*(.-)%s*$", "%1")  -- trim
+            if keyword ~= "" and keyword ~= "inv" and keyword ~= "invite" then
+                table.insert(keywords, keyword)
+            end
+        end
+        db.channelKeywords = keywords
+        db.keywordsChannel = nil
+    end
+    
+    -- Ensure lists exist
+    db.whisperKeywords = db.whisperKeywords or {}
+    db.channelKeywords = db.channelKeywords or {}
+    
     return db
 end
 
@@ -499,9 +528,9 @@ function Advertiser:CheckAutoInvite(sender, message, chatType, channelName)
     local db = getDB()
     if not db.autoInvite then return end
     
-    -- Get keywords based on chat type
-    local keywords = chatType == "WHISPER" and db.keywordsWhisper or db.keywordsChannel
-    if not keywords or keywords == "" then return end
+    -- Get keywords based on chat type (rule-based lists)
+    local keywords = chatType == "WHISPER" and db.whisperKeywords or db.channelKeywords
+    if not keywords or #keywords == 0 then return end
     
     -- Check channel filter
     if chatType == "CHANNEL" and channelName then
@@ -513,9 +542,8 @@ function Advertiser:CheckAutoInvite(sender, message, chatType, channelName)
     
     -- Check for keyword match
     local lowerMsg = message:lower()
-    for keyword in keywords:gmatch("[^,]+") do
-        keyword = trim(keyword)
-        if keyword ~= "" and lowerMsg:find(keyword:lower(), 1, true) then
+    for _, keyword in ipairs(keywords) do
+        if keyword and keyword ~= "" and lowerMsg:find(keyword:lower(), 1, true) then
             self:InvitePlayer(sender, keyword)
             return
         end
@@ -691,6 +719,135 @@ end
 -- TAB: AUTO INVITE
 --------------------------------------------------------------------------------
 
+-- Helper to create keyword list UI
+local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width)
+    local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    container:SetPoint("TOPLEFT", x, y)
+    container:SetSize(width, 120)
+    container:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 10,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    container:SetBackdropColor(0.03, 0.03, 0.03, 0.9)
+    container:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+    
+    -- Title
+    local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    titleText:SetPoint("TOPLEFT", 8, -6)
+    titleText:SetText(title)
+    
+    -- Keyword rows container (scrollable)
+    local listFrame = CreateFrame("Frame", nil, container)
+    listFrame:SetPoint("TOPLEFT", 6, -24)
+    listFrame:SetPoint("BOTTOMRIGHT", -6, 30)
+    
+    local rows = {}
+    
+    local function RefreshList()
+        -- Hide all existing rows
+        for _, row in ipairs(rows) do
+            row:Hide()
+        end
+        
+        local db = getDB()
+        local keywords = db[dbKey] or {}
+        
+        local yOff = 0
+        for i, keyword in ipairs(keywords) do
+            local row = rows[i]
+            if not row then
+                row = CreateFrame("Frame", nil, listFrame, "BackdropTemplate")
+                row:SetHeight(20)
+                row:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                })
+                row:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
+                
+                row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                row.text:SetPoint("LEFT", 6, 0)
+                row.text:SetJustifyH("LEFT")
+                
+                row.removeBtn = CreateFrame("Button", nil, row)
+                row.removeBtn:SetSize(16, 16)
+                row.removeBtn:SetPoint("RIGHT", -4, 0)
+                row.removeBtn:SetNormalTexture("Interface\\Buttons\\UI-StopButton")
+                row.removeBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+                
+                rows[i] = row
+            end
+            
+            row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, yOff)
+            row:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 0, yOff)
+            row.text:SetText("|cffFFFFFF" .. keyword .. "|r")
+            row.removeBtn:SetScript("OnClick", function()
+                table.remove(keywords, i)
+                db[dbKey] = keywords
+                RefreshList()
+            end)
+            row:Show()
+            
+            yOff = yOff - 22
+        end
+    end
+    
+    -- Add keyword input
+    local addBg = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    addBg:SetPoint("BOTTOMLEFT", 6, 6)
+    addBg:SetSize(width - 70, 20)
+    addBg:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    addBg:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    addBg:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+    
+    local addEdit = CreateFrame("EditBox", nil, addBg)
+    addEdit:SetPoint("TOPLEFT", 4, -2)
+    addEdit:SetPoint("BOTTOMRIGHT", -4, 2)
+    addEdit:SetFontObject("ChatFontSmall")
+    addEdit:SetAutoFocus(false)
+    
+    local addBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
+    addBtn:SetSize(50, 20)
+    addBtn:SetPoint("BOTTOMRIGHT", -6, 6)
+    addBtn:SetText("Add")
+    
+    local function AddKeyword()
+        local keyword = addEdit:GetText():trim()
+        if keyword ~= "" then
+            local db = getDB()
+            db[dbKey] = db[dbKey] or {}
+            -- Check for duplicates
+            for _, existing in ipairs(db[dbKey]) do
+                if existing:lower() == keyword:lower() then
+                    EasyLife:Print("|cffFF6600Keyword already exists:|r " .. keyword)
+                    return
+                end
+            end
+            table.insert(db[dbKey], keyword)
+            addEdit:SetText("")
+            RefreshList()
+            EasyLife:Print("|cff00FF00Added keyword:|r " .. keyword)
+        end
+    end
+    
+    addEdit:SetScript("OnEnterPressed", function()
+        AddKeyword()
+        addEdit:ClearFocus()
+    end)
+    addEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    addBtn:SetScript("OnClick", AddKeyword)
+    
+    RefreshList()
+    container.RefreshList = RefreshList
+    
+    return container
+end
+
 local function BuildAutoInviteTab(content, db)
     local y = -12
     local W = 330
@@ -713,28 +870,13 @@ local function BuildAutoInviteTab(content, db)
     end)
     y = y - 34
     
-    -- Keywords section
-    local kwLabel1 = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    kwLabel1:SetPoint("TOPLEFT", 12, y)
-    kwLabel1:SetText("Whisper keywords |cff888888(comma separated)|r:")
-    y = y - 18
+    -- Whisper keywords list
+    CreateKeywordList(content, 12, y, "|cffFFD700Whisper Keywords|r", db.whisperKeywords, "whisperKeywords", W)
+    y = y - 130
     
-    local _, kwEdit1 = CreateEditBox(content, 12, y, W, 40, db.keywordsWhisper, true)
-    kwEdit1:SetScript("OnTextChanged", function(self)
-        getDB().keywordsWhisper = self:GetText()
-    end)
-    y = y - 50
-    
-    local kwLabel2 = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    kwLabel2:SetPoint("TOPLEFT", 12, y)
-    kwLabel2:SetText("Channel keywords |cff888888(comma separated)|r:")
-    y = y - 18
-    
-    local _, kwEdit2 = CreateEditBox(content, 12, y, W, 40, db.keywordsChannel, true)
-    kwEdit2:SetScript("OnTextChanged", function(self)
-        getDB().keywordsChannel = self:GetText()
-    end)
-    y = y - 50
+    -- Channel keywords list
+    CreateKeywordList(content, 12, y, "|cffFFD700Channel Keywords|r", db.channelKeywords, "channelKeywords", W)
+    y = y - 130
     
     -- Channels to monitor
     local chanLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")

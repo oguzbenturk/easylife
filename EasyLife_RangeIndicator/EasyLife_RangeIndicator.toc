@@ -1,0 +1,10 @@
+## Interface: 11508
+## Title: |cff69ccf0EasyLife: Range Indicator|r |cffffff00v1.2|r
+## Notes: Shows distance to closest mob and target
+## Author: EasyLife
+## Version: 1.2.0
+## Dependencies: EasyLife
+## SavedVariables: EasyLife_RangeIndicatorDB
+
+LibRangeCheck.lua
+RangeIndicator.lua

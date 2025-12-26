@@ -1,0 +1,8 @@
+## Interface: 11508
+## Title: |cff69ccf0EasyLife: Boostilator|r |cffffff00v1.2|r
+## Notes: Boosting session tracker
+## Author: EasyLife
+## Version: 1.2.0
+## Dependencies: EasyLife
+
+..\EasyLife\Boostilator.lua

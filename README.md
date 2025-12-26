@@ -20,19 +20,19 @@ A modular helper addon suite for World of Warcraft Classic Era Anniversary (1.15
 
 ## Installation
 
-### Manual Installation
-1. Download the latest release
-2. Extract to `World of Warcraft/_classic_era_/Interface/AddOns/`
-3. You should have these folders:
-   - `EasyLife/` (core - required)
-   - `EasyLife_Advertiser/` (optional)
-   - `EasyLife_AggroAlert/` (optional)
-   - `EasyLife_RangeIndicator/` (optional)
-   - etc.
+### From GitHub
+```bash
+cd "World of Warcraft/_classic_era_/Interface/AddOns"
+git clone https://github.com/oguzbenturk/easylife.git
+```
+
+### Manual Download
+1. Download and extract the ZIP
+2. Copy ALL folders to `World of Warcraft/_classic_era_/Interface/AddOns/`
 
 ### Enable Modules
 1. At character select, click "AddOns"
-2. Enable `EasyLife` (core)
+2. Enable `EasyLife` (core - required)
 3. Enable any `EasyLife_*` modules you want
 
 ## Usage
@@ -42,52 +42,46 @@ A modular helper addon suite for World of Warcraft Classic Era Anniversary (1.15
 
 Each module shows a **first-run popup** with detailed instructions when opened for the first time.
 
-## Clean Install / Reset
-
-To reset a module's settings, delete its saved variables:
-```
-WTF/Account/<ACCOUNT>/SavedVariables/EasyLife.lua
-```
-
-Or delete specific module DBs (like `EasyLife_RangeIndicatorDB`) from that file.
-
 ## Project Structure
 
 ```
-EasyLife/                    # Core addon (required)
-├── Core.lua                 # Module registry, global table
-├── Locales.lua              # English & Turkish translations
-├── Config.lua               # Main config window
-├── Minimap.lua              # Minimap button
-├── Advertiser.lua           # Bundled module
-├── Boostilator.lua          # Bundled module
-├── VendorTracker.lua        # Bundled module
-├── IceBlockHelper.lua       # Bundled module
-├── AggroAlert.lua           # Bundled module
-└── EasyLife.toc
+easylife/                         <- Clone this repo into AddOns folder
+├── EasyLife/                     <- Core addon (required)
+│   ├── Core.lua                  # Module registry, global table
+│   ├── Locales.lua               # English & Turkish translations
+│   ├── Config.lua                # Main config window
+│   ├── Minimap.lua               # Minimap button
+│   ├── Advertiser.lua            # Bundled module
+│   ├── Boostilator.lua           # Bundled module
+│   ├── VendorTracker.lua         # Bundled module
+│   ├── IceBlockHelper.lua        # Bundled module
+│   ├── AggroAlert.lua            # Bundled module
+│   └── EasyLife.toc
+│
+├── EasyLife_Advertiser/          <- Stub addon (enables Advertiser separately)
+├── EasyLife_Boostilator/         <- Stub addon
+├── EasyLife_AggroAlert/          <- Stub addon
+├── EasyLife_IceBlockHelper/      <- Stub addon
+├── EasyLife_VendorTracker/       <- Stub addon
+├── EasyLife_RangeIndicator/      <- Standalone addon
+├── EasyLife_CastBarAura/         <- Standalone addon
+│
+├── README.md
+├── LICENSE
+└── .gitignore
+```
 
-EasyLife_*/                  # Satellite addons (optional)
-├── EasyLife_*.toc           # Stub that loads parent module
-└── *.lua                    # Module-specific code (if standalone)
+## Clean Install / Reset
+
+To reset all settings:
+```
+Delete: WTF/Account/<ACCOUNT>/SavedVariables/EasyLife.lua
 ```
 
 ## For Developers
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for AI coding guidelines and architecture details.
-
-### Adding a New Module
-
-1. Create `NewModule.lua` in `EasyLife/` with DEFAULTS + ensureDB pattern
-2. Add to `EasyLife.toc` file list
-3. Add localization keys to `Locales.lua` (both L_enUS and L_trTR)
-4. Add to `MODULE_LIST` in `Config.lua`
-5. Register at file end: `EasyLife:RegisterModule("NewModule", NewModule)`
-6. Create `EasyLife_NewModule/` stub addon for independent enable/disable
+See [EasyLife/.github/copilot-instructions.md](EasyLife/.github/copilot-instructions.md) for AI coding guidelines.
 
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
-
-## Support
-
-Found a bug? Have a feature request? Open an issue on GitHub!

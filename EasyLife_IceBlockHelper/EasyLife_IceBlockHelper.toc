@@ -1,0 +1,8 @@
+## Interface: 11508
+## Title: |cff69ccf0EasyLife: IceBlock Helper|r |cffffff00v1.2|r
+## Notes: Helpers for Ice Block usage
+## Author: EasyLife
+## Version: 1.2.0
+## Dependencies: EasyLife
+
+..\EasyLife\IceBlockHelper.lua

@@ -20,20 +20,30 @@ A modular helper addon suite for World of Warcraft Classic Era Anniversary (1.15
 
 ## Installation
 
-### From GitHub
+> ⚠️ **IMPORTANT**: The addon folder MUST be named `EasyLife` (capital E and L) for WoW to detect it!
+
+### From GitHub (Recommended)
 ```bash
 cd "World of Warcraft/_classic_era_/Interface/AddOns"
-git clone https://github.com/oguzbenturk/easylife.git
+git clone https://github.com/oguzbenturk/easylife.git EasyLife
 ```
+> Note: The `EasyLife` at the end renames the folder correctly.
 
-### Manual Download
-1. Download and extract the ZIP
-2. Copy ALL folders to `World of Warcraft/_classic_era_/Interface/AddOns/`
+### Manual Download (ZIP)
+1. Download ZIP from [Releases](https://github.com/oguzbenturk/easylife/releases) or click "Code" → "Download ZIP"
+2. Extract the ZIP file
+3. **Rename** the extracted folder from `easylife-main` to `EasyLife`
+4. Move the `EasyLife` folder to `World of Warcraft/_classic_era_/Interface/AddOns/`
+
+Your final path should look like:
+```
+World of Warcraft/_classic_era_/Interface/AddOns/EasyLife/EasyLife.toc
+```
 
 ### Enable Modules
 1. At character select, click "AddOns"
 2. Enable `EasyLife` (core - required)
-3. Enable any `EasyLife_*` modules you want
+3. Open config with `/el` and enable the modules you want
 
 ## Usage
 
@@ -45,30 +55,20 @@ Each module shows a **first-run popup** with detailed instructions when opened f
 ## Project Structure
 
 ```
-easylife/                         <- Clone this repo into AddOns folder
-├── EasyLife/                     <- Core addon (required)
-│   ├── Core.lua                  # Module registry, global table
-│   ├── Locales.lua               # English & Turkish translations
-│   ├── Config.lua                # Main config window
-│   ├── Minimap.lua               # Minimap button
-│   ├── Advertiser.lua            # Bundled module
-│   ├── Boostilator.lua           # Bundled module
-│   ├── VendorTracker.lua         # Bundled module
-│   ├── IceBlockHelper.lua        # Bundled module
-│   ├── AggroAlert.lua            # Bundled module
-│   └── EasyLife.toc
-│
-├── EasyLife_Advertiser/          <- Stub addon (enables Advertiser separately)
-├── EasyLife_Boostilator/         <- Stub addon
-├── EasyLife_AggroAlert/          <- Stub addon
-├── EasyLife_IceBlockHelper/      <- Stub addon
-├── EasyLife_VendorTracker/       <- Stub addon
-├── EasyLife_RangeIndicator/      <- Standalone addon
-├── EasyLife_CastBarAura/         <- Standalone addon
-│
+EasyLife/                         <- This folder goes in AddOns/
+├── Core.lua                      # Module registry, global table
+├── Locales.lua                   # English & Turkish translations
+├── Config.lua                    # Main config window
+├── Minimap.lua                   # Minimap button
+├── Advertiser.lua                # Auto-invite & messaging module
+├── Boostilator.lua               # Boost tracking module
+├── VendorTracker.lua             # Loot value tracker module
+├── IceBlockHelper.lua            # Mage Ice Block helper module
+├── AggroAlert.lua                # Aggro warning module
+├── EasyLife.toc                  # Addon manifest
+├── MessageQueue/                 # Bundled library
 ├── README.md
-├── LICENSE
-└── .gitignore
+└── LICENSE
 ```
 
 ## Clean Install / Reset
@@ -80,7 +80,7 @@ Delete: WTF/Account/<ACCOUNT>/SavedVariables/EasyLife.lua
 
 ## For Developers
 
-See [EasyLife/.github/copilot-instructions.md](EasyLife/.github/copilot-instructions.md) for AI coding guidelines.
+See [.github/copilot-instructions.md](.github/copilot-instructions.md) for AI coding guidelines.
 
 ## License
 

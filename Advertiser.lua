@@ -10,8 +10,8 @@ local Advertiser = {}
 --------------------------------------------------------------------------------
 
 local DEFAULTS = {
-    enabled = false,
-    -- Auto Invite
+    enabled = false,  -- Module starts stopped
+    -- Auto Invite (starts disabled)
     autoInvite = false,
     autoInviteDelay = 0.5,
     whisperKeywords = {},  -- Rule-based: list of keywords for whispers
@@ -21,17 +21,17 @@ local DEFAULTS = {
     adMessage = "",
     adTargetChannels = {},
     adCooldown = 30,
-    useFloatingButton = true,
+    useFloatingButton = false,  -- Starts disabled
     floatingButtonLocked = false,
     floatingX = 200,
     floatingY = -200,
-    -- Auto Send Timer
+    -- Auto Send Timer (starts disabled)
     autoSendEnabled = false,
     autoSendInterval = 60,
-    -- Keybind
+    -- Keybind (starts disabled)
     keybindEnabled = false,
     keybindKey = nil,
-    -- Auto Reply
+    -- Auto Reply (starts disabled)
     autoReplyEnabled = false,
     autoReplyRules = {},
     autoReplyCooldown = 10,
@@ -719,11 +719,13 @@ end
 -- TAB: AUTO INVITE
 --------------------------------------------------------------------------------
 
--- Helper to create keyword list UI
-local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width)
+-- Helper to create keyword list UI with scrolling
+local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width, height)
+    height = height or 140  -- Default height
+    
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     container:SetPoint("TOPLEFT", x, y)
-    container:SetSize(width, 120)
+    container:SetSize(width, height)
     container:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -738,10 +740,38 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
     titleText:SetPoint("TOPLEFT", 8, -6)
     titleText:SetText(title)
     
-    -- Keyword rows container (scrollable)
-    local listFrame = CreateFrame("Frame", nil, container)
-    listFrame:SetPoint("TOPLEFT", 6, -24)
-    listFrame:SetPoint("BOTTOMRIGHT", -6, 30)
+    -- Add keyword input at TOP (fixed position, always visible)
+    local addBg = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    addBg:SetPoint("TOPLEFT", 6, -24)
+    addBg:SetSize(width - 70, 22)
+    addBg:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    addBg:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    addBg:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+    
+    local addEdit = CreateFrame("EditBox", nil, addBg)
+    addEdit:SetPoint("TOPLEFT", 4, -3)
+    addEdit:SetPoint("BOTTOMRIGHT", -4, 3)
+    addEdit:SetFontObject("ChatFontSmall")
+    addEdit:SetAutoFocus(false)
+    
+    local addBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
+    addBtn:SetSize(50, 22)
+    addBtn:SetPoint("TOPRIGHT", -6, -24)
+    addBtn:SetText("Add")
+    
+    -- Scrollable list area BELOW the input
+    local scrollFrame = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 6, -50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -26, 6)
+    
+    local listFrame = CreateFrame("Frame", nil, scrollFrame)
+    listFrame:SetSize(width - 32, 1)  -- Width, height will be dynamic
+    scrollFrame:SetScrollChild(listFrame)
     
     local rows = {}
     
@@ -759,7 +789,7 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
             local row = rows[i]
             if not row then
                 row = CreateFrame("Frame", nil, listFrame, "BackdropTemplate")
-                row:SetHeight(20)
+                row:SetHeight(22)
                 row:SetBackdrop({
                     bgFile = "Interface\\Buttons\\WHITE8x8",
                 })
@@ -779,45 +809,26 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
             end
             
             row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, yOff)
-            row:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 0, yOff)
+            row:SetPoint("RIGHT", listFrame, "RIGHT", 0, 0)
             row.text:SetText("|cffFFFFFF" .. keyword .. "|r")
             row.removeBtn:SetScript("OnClick", function()
                 table.remove(keywords, i)
                 db[dbKey] = keywords
                 RefreshList()
+                EasyLife:Print("|cffFF6600Removed keyword:|r " .. keyword)
             end)
             row:Show()
             
-            yOff = yOff - 22
+            yOff = yOff - 24
         end
+        
+        -- Update list frame height for scrolling
+        listFrame:SetHeight(math.max(1, math.abs(yOff)))
     end
     
-    -- Add keyword input
-    local addBg = CreateFrame("Frame", nil, container, "BackdropTemplate")
-    addBg:SetPoint("BOTTOMLEFT", 6, 6)
-    addBg:SetSize(width - 70, 20)
-    addBg:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 8,
-        insets = {left = 2, right = 2, top = 2, bottom = 2},
-    })
-    addBg:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
-    addBg:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
-    
-    local addEdit = CreateFrame("EditBox", nil, addBg)
-    addEdit:SetPoint("TOPLEFT", 4, -2)
-    addEdit:SetPoint("BOTTOMRIGHT", -4, 2)
-    addEdit:SetFontObject("ChatFontSmall")
-    addEdit:SetAutoFocus(false)
-    
-    local addBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
-    addBtn:SetSize(50, 20)
-    addBtn:SetPoint("BOTTOMRIGHT", -6, 6)
-    addBtn:SetText("Add")
-    
     local function AddKeyword()
-        local keyword = addEdit:GetText():trim()
+        local keyword = addEdit:GetText()
+        keyword = keyword and keyword:match("^%s*(.-)%s*$") or ""  -- trim
         if keyword ~= "" then
             local db = getDB()
             db[dbKey] = db[dbKey] or {}
@@ -831,7 +842,7 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
             table.insert(db[dbKey], keyword)
             addEdit:SetText("")
             RefreshList()
-            EasyLife:Print("|cff00FF00Added keyword:|r " .. keyword)
+            EasyLife:Print("|cff00FF00[Auto-Invite]|r Added keyword: |cffFFD700" .. keyword .. "|r")
         end
     end
     
@@ -853,9 +864,15 @@ local function BuildAutoInviteTab(content, db)
     local W = 330
     
     -- Enable checkbox
-    CreateCheckbox(content, 12, y, "Enable auto-invite on keyword match", db.autoInvite, function(cb)
-        getDB().autoInvite = cb:GetChecked()
+    local enableCb = CreateCheckbox(content, 12, y, "Enable auto-invite on keyword match", db.autoInvite, function(cb)
+        local enabled = cb:GetChecked()
+        getDB().autoInvite = enabled
         Advertiser:UpdateState()
+        if enabled then
+            EasyLife:Print("|cff00FF00[Auto-Invite]|r Enabled - listening for keywords")
+        else
+            EasyLife:Print("|cffFF6600[Auto-Invite]|r Disabled")
+        end
     end)
     y = y - 30
     
@@ -870,13 +887,13 @@ local function BuildAutoInviteTab(content, db)
     end)
     y = y - 34
     
-    -- Whisper keywords list
-    CreateKeywordList(content, 12, y, "|cffFFD700Whisper Keywords|r", db.whisperKeywords, "whisperKeywords", W)
-    y = y - 130
+    -- Whisper keywords list (with scrolling, input at top)
+    CreateKeywordList(content, 12, y, "|cffFFD700Whisper Keywords|r (triggers on /whisper)", db.whisperKeywords, "whisperKeywords", W, 150)
+    y = y - 160
     
-    -- Channel keywords list
-    CreateKeywordList(content, 12, y, "|cffFFD700Channel Keywords|r", db.channelKeywords, "channelKeywords", W)
-    y = y - 130
+    -- Channel keywords list (with scrolling, input at top)
+    CreateKeywordList(content, 12, y, "|cffFFD700Channel Keywords|r (triggers in chat channels)", db.channelKeywords, "channelKeywords", W, 150)
+    y = y - 160
     
     -- Channels to monitor
     local chanLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -1183,8 +1200,14 @@ local function BuildAutoReplyTab(content, db)
     
     -- Enable
     CreateCheckbox(content, 12, y, "Enable auto-reply to whispers", db.autoReplyEnabled, function(cb)
-        getDB().autoReplyEnabled = cb:GetChecked()
+        local enabled = cb:GetChecked()
+        getDB().autoReplyEnabled = enabled
         Advertiser:UpdateState()
+        if enabled then
+            EasyLife:Print("|cff00FF00[Auto-Reply]|r Enabled - will respond to keyword whispers")
+        else
+            EasyLife:Print("|cffFF6600[Auto-Reply]|r Disabled")
+        end
     end)
     y = y - 30
     
@@ -1502,12 +1525,14 @@ function Advertiser:BuildConfigUI(parent)
         getDB().enabled = true
         Advertiser:UpdateState()
         RefreshHeader()
+        EasyLife:Print("|cff00FF00[Advertiser]|r Started - all enabled features are now active")
     end)
     
     stopBtn:SetScript("OnClick", function()
         getDB().enabled = false
         Advertiser:UpdateState()
         RefreshHeader()
+        EasyLife:Print("|cffFF6600[Advertiser]|r Stopped - all features paused")
     end)
     
     RefreshHeader()

@@ -15,41 +15,18 @@ local function initDropdown(self, level)
 end
 
 local function buildMenu()
-  local list = EasyLife_Config_GetModuleList and EasyLife_Config_GetModuleList() or {}
   local menu = {
     { text = "EasyLife", isTitle = true, notCheckable = true },
-  }
-
-  for _, modInfo in ipairs(list) do
-    local moduleName = modInfo.name
-    local label = moduleName
-    if modInfo.key and EasyLife and EasyLife.L then
-      label = EasyLife:L(modInfo.key)
-    end
-    table.insert(menu, {
-      text = label,
+    {
+      text = EasyLife and EasyLife.L and EasyLife:L("CONFIG_TITLE") or "EasyLife Configuration",
       notCheckable = true,
       func = function()
-        if EasyLife_Config_OpenSingle then
-          EasyLife_Config_OpenSingle(moduleName)
-        elseif EasyLife_Config_OpenTo then
-          EasyLife_Config_OpenTo(moduleName)
-        else
-          EasyLife_Config_Open()
-          EasyLife_Config_SelectModule(moduleName)
+        if EasyLife_Config_Toggle then
+          EasyLife_Config_Toggle()
         end
       end,
-    })
-  end
-
-  table.insert(menu, { text = " ", disabled = true, notCheckable = true })
-  table.insert(menu, {
-    text = EasyLife and EasyLife.L and EasyLife:L("CONFIG_TITLE") or "Settings",
-    notCheckable = true,
-    func = function()
-      EasyLife_Config_Open()
-    end,
-  })
+    },
+  }
 
   return menu
 end

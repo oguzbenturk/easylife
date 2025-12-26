@@ -177,11 +177,8 @@ end
 
 -- Check if first-run should be shown for a module
 function EasyLife:ShouldShowFirstRun(dbTable)
-  -- DEV MODE: Always show popup for development
-  return true
-  -- Production mode (uncomment when done):
-  -- if not dbTable then return false end
-  -- return not dbTable._firstRunShown
+  if not dbTable then return false end
+  return not dbTable._firstRunShown
 end
 
 -- Init

@@ -6,11 +6,11 @@ local currentModule
 local moduleRows = {}
 
 local MODULE_LIST = {
-  { name = "Advertise", key = "ADS_TITLE", descKey = "ADS_DESC" },
-  { name = "Boostilator", key = "BOOST_TITLE", descKey = "BOOST_DESC" },
-  { name = "VendorTracker", key = "VENDOR_TITLE", descKey = "VENDOR_DESC" },
-  { name = "IceBlockHelper", key = "ICEBLOCK_TITLE", descKey = "ICEBLOCK_DESC" },
-  { name = "AggroAlert", key = "AGGRO_TITLE", descKey = "AGGRO_DESC" },
+  { name = "Advertise", key = "ADS_TITLE", descKey = "ADS_DESC", firstRunKey = "ADS_FIRST_RUN_DETAILED" },
+  { name = "Boostilator", key = "BOOST_TITLE", descKey = "BOOST_DESC", firstRunKey = "BOOST_FIRST_RUN_DETAILED" },
+  { name = "VendorTracker", key = "VENDOR_TITLE", descKey = "VENDOR_DESC", firstRunKey = "VENDOR_FIRST_RUN_DETAILED" },
+  { name = "IceBlockHelper", key = "ICEBLOCK_TITLE", descKey = "ICEBLOCK_DESC", firstRunKey = "ICEBLOCK_FIRST_RUN_DETAILED" },
+  { name = "AggroAlert", key = "AGGRO_TITLE", descKey = "AGGRO_DESC", firstRunKey = "AGGRO_FIRST_RUN_DETAILED" },
 }
 
 local function L(key)
@@ -124,9 +124,29 @@ local function createMainFrame()
     -- Description
     local descText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -2)
-    descText:SetPoint("RIGHT", row, "RIGHT", -10, 0)
+    descText:SetPoint("RIGHT", row, "RIGHT", -50, 0)
     descText:SetJustifyH("LEFT")
     descText:SetText("|cffAAAAAA" .. L(modInfo.descKey) .. "|r")
+    
+    -- Preview popup button (question mark icon)
+    local previewBtn = CreateFrame("Button", nil, row)
+    previewBtn:SetSize(20, 20)
+    previewBtn:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    previewBtn:SetNormalTexture("Interface\\GossipFrame\\ActiveQuestIcon")
+    previewBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    previewBtn:SetScript("OnClick", function()
+      -- Force show the first-run popup for this module
+      EasyLife:ShowFirstRunPopup(modInfo.name, modInfo.key, modInfo.firstRunKey, {})
+    end)
+    previewBtn:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_TOP")
+      GameTooltip:AddLine("Preview Info Popup")
+      GameTooltip:AddLine("|cff888888Click to preview the module info popup|r")
+      GameTooltip:Show()
+    end)
+    previewBtn:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
     
     moduleRows[modInfo.name] = row
   end

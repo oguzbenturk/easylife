@@ -1224,32 +1224,96 @@ end
 
 function Advertiser:BuildConfigUI(parent)
     local db = getDB()
-    local yStart = -6
     
     -- Show first-run popup if needed
     if EasyLife:ShouldShowFirstRun(db) then
         EasyLife:ShowFirstRunPopup("Advertise", "ADS_TITLE", "ADS_FIRST_RUN_DETAILED", db)
     end
     
-    -- Tab bar
-    local tabBar = CreateFrame("Frame", nil, parent)
-    tabBar:SetPoint("TOPLEFT", 6, yStart)
-    tabBar:SetPoint("TOPRIGHT", -6, yStart)
-    tabBar:SetHeight(28)
+    -- Tab data
+    local tabInfo = {
+        {id = "invite", text = "Auto Invite", build = BuildAutoInviteTab},
+        {id = "message", text = "Send Message", build = BuildSendMessageTab},
+        {id = "reply", text = "Auto Reply", build = BuildAutoReplyTab},
+    }
     
-    -- Header
+    local tabs = {}
+    local tabContents = {}
+    local selectedTab = 1
+    
+    -- Tab bar at TOP
+    local tabBar = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    tabBar:SetPoint("TOPLEFT", 0, 0)
+    tabBar:SetPoint("TOPRIGHT", 0, 0)
+    tabBar:SetHeight(30)
+    tabBar:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = {left = 0, right = 0, top = 0, bottom = 0},
+    })
+    tabBar:SetBackdropColor(0.15, 0.12, 0.08, 1)
+    tabBar:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
+    
+    -- Create tab buttons
+    local tabWidth = 100
+    for i, info in ipairs(tabInfo) do
+        local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
+        tab:SetSize(tabWidth, 26)
+        tab:SetPoint("LEFT", tabBar, "LEFT", 4 + (i-1) * (tabWidth + 4), 0)
+        tab:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+            insets = {left = 0, right = 0, top = 0, bottom = 0},
+        })
+        
+        tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        tab.text:SetPoint("CENTER", 0, 0)
+        tab.text:SetText(info.text)
+        
+        tab:SetScript("OnEnter", function(self)
+            if selectedTab ~= i then
+                self:SetBackdropColor(0.25, 0.22, 0.15, 1)
+            end
+        end)
+        tab:SetScript("OnLeave", function(self)
+            if selectedTab ~= i then
+                self:SetBackdropColor(0.12, 0.1, 0.06, 1)
+            end
+        end)
+        
+        tabs[i] = tab
+    end
+    
+    -- Update tab appearance
+    local function UpdateTabs()
+        for i, tab in ipairs(tabs) do
+            if i == selectedTab then
+                tab:SetBackdropColor(0.35, 0.3, 0.2, 1)
+                tab:SetBackdropBorderColor(0.6, 0.5, 0.3, 1)
+                tab.text:SetTextColor(1, 0.9, 0.6)
+            else
+                tab:SetBackdropColor(0.12, 0.1, 0.06, 1)
+                tab:SetBackdropBorderColor(0.25, 0.2, 0.1, 1)
+                tab.text:SetTextColor(0.7, 0.65, 0.5)
+            end
+        end
+    end
+    
+    -- Header (below tabs)
     local header = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    header:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, -4)
-    header:SetPoint("TOPRIGHT", tabBar, "BOTTOMRIGHT", 0, -4)
+    header:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
+    header:SetPoint("TOPRIGHT", tabBar, "BOTTOMRIGHT", 0, 0)
     header:SetHeight(50)
     header:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3},
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = {left = 0, right = 0, top = 0, bottom = 0},
     })
-    header:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    header:SetBackdropBorderColor(0.5, 0.45, 0.25, 0.9)
+    header:SetBackdropColor(0.08, 0.07, 0.05, 1)
+    header:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
     
     local title = header:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -6)
@@ -1312,39 +1376,20 @@ function Advertiser:BuildConfigUI(parent)
         if headerTimer then headerTimer:Cancel(); headerTimer = nil end
     end)
     
-    -- Content area
-    local contentArea = CreateFrame("Frame", nil, parent)
-    contentArea:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -6)
-    contentArea:SetPoint("BOTTOMRIGHT", -6, 6)
+    -- Content area (below header)
+    local contentArea = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    contentArea:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    contentArea:SetPoint("BOTTOMRIGHT", 0, 0)
+    contentArea:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    contentArea:SetBackdropColor(0.06, 0.05, 0.04, 1)
     
-    -- Tab data
-    local tabInfo = {
-        {id = "invite", text = "Auto Invite", build = BuildAutoInviteTab},
-        {id = "message", text = "Send Message", build = BuildSendMessageTab},
-        {id = "reply", text = "Auto Reply", build = BuildAutoReplyTab},
-    }
-    
-    local tabs = {}
-    local tabContents = {}
-    
-    -- Create tabs
+    -- Create content for each tab
     for i, info in ipairs(tabInfo) do
-        local tab = CreateFrame("Button", "EasyLifeAdvTab" .. i, tabBar, "CharacterFrameTabButtonTemplate")
-        tab:SetID(i)
-        tab:SetText(info.text)
-        if i == 1 then
-            tab:SetPoint("BOTTOMLEFT", tabBar, "BOTTOMLEFT", 5, 0)
-        else
-            tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", -14, 0)
-        end
-        PanelTemplates_TabResize(tab, 0)
-        tab:SetFrameLevel(parent:GetFrameLevel() + 10)
-        tabs[i] = tab
-        
-        -- Create scroll frame for content
         local scroll = CreateFrame("ScrollFrame", nil, contentArea, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 0, 0)
-        scroll:SetPoint("BOTTOMRIGHT", -22, 0)
+        scroll:SetPoint("TOPLEFT", 4, -4)
+        scroll:SetPoint("BOTTOMRIGHT", -26, 4)
         scroll:Hide()
         
         local content = CreateFrame("Frame", nil, scroll)
@@ -1357,14 +1402,10 @@ function Advertiser:BuildConfigUI(parent)
     
     -- Tab switching
     local function SelectTab(index)
-        for i, tab in ipairs(tabs) do
-            if i == index then
-                PanelTemplates_SelectTab(tab)
-                tabContents[i]:Show()
-            else
-                PanelTemplates_DeselectTab(tab)
-                tabContents[i]:Hide()
-            end
+        selectedTab = index
+        UpdateTabs()
+        for i, scroll in ipairs(tabContents) do
+            scroll:SetShown(i == index)
         end
     end
     
@@ -1372,6 +1413,7 @@ function Advertiser:BuildConfigUI(parent)
         tab:SetScript("OnClick", function() SelectTab(i) end)
     end
     
+    UpdateTabs()
     SelectTab(1)
 end
 

@@ -171,12 +171,12 @@ local function createSettingsFrame()
   moduleSettingsFrame:SetClampedToScreen(true)
   
   moduleSettingsFrame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 11, right = 12, top = 12, bottom = 11 },
   })
-  moduleSettingsFrame:SetBackdropColor(0.04, 0.04, 0.04, 0.95)
+  moduleSettingsFrame:SetBackdropColor(0.1, 0.08, 0.05, 1)
   
   -- Title (will be set dynamically)
   moduleSettingsFrame.title = moduleSettingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

@@ -1,19 +1,34 @@
 -- EasyLife Core
 EasyLife = EasyLife or {}
-EasyLife.version = "1.0.1"
+EasyLife.version = "1.0.2"
 EasyLife.modules = EasyLife.modules or {}
 
 -- Defaults
 local DEFAULTS = {
   language = "auto",
   minimapAngle = 45,
+  -- Enable all modules by default for new installs
+  enabledModules = {
+    Advertise = true,
+    Boostilator = true,
+    VendorTracker = true,
+    IceBlockHelper = true,
+    AggroAlert = true,
+  },
 }
 
 local function ensureDB()
   EasyLifeDB = EasyLifeDB or {}
   for k, v in pairs(DEFAULTS) do
     if EasyLifeDB[k] == nil then
-      EasyLifeDB[k] = v
+      if type(v) == "table" then
+        EasyLifeDB[k] = {}
+        for kk, vv in pairs(v) do
+          EasyLifeDB[k][kk] = vv
+        end
+      else
+        EasyLifeDB[k] = v
+      end
     end
   end
 end

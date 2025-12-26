@@ -1,6 +1,6 @@
 -- EasyLife Core
 EasyLife = EasyLife or {}
-EasyLife.version = "1.0.0"
+EasyLife.version = "1.0.1"
 EasyLife.modules = EasyLife.modules or {}
 
 -- Defaults
@@ -200,7 +200,16 @@ end)
 -- Slash command
 SLASH_EASYLIFE1 = "/easylife"
 SLASH_EASYLIFE2 = "/el"
-SlashCmdList["EASYLIFE"] = function()
+SlashCmdList["EASYLIFE"] = function(msg)
+  if msg == "version" or msg == "v" then
+    EasyLife:Print("Version: |cff00FF00" .. EasyLife.version .. "|r")
+    local moduleCount = 0
+    for name, _ in pairs(EasyLife.modules) do
+      moduleCount = moduleCount + 1
+    end
+    EasyLife:Print("Loaded modules: |cff00FF00" .. moduleCount .. "|r")
+    return
+  end
   if EasyLife_Config_Toggle then
     EasyLife_Config_Toggle()
   end

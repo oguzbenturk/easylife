@@ -1,9 +1,0 @@
-## Interface: 11508
-## Title: |cff69ccf0EasyLife: CastBar Aura|r |cffffff00v1.2|r
-## Notes: Shows incoming spell casts on the player
-## Author: EasyLife
-## Version: 1.2.0
-## Dependencies: EasyLife
-## SavedVariables: EasyLife_CastBarAuraDB
-
-CastBarAura.lua

@@ -1,8 +1,0 @@
-## Interface: 11508
-## Title: |cff69ccf0EasyLife: Vendor Tracker|r |cffffff00v1.2|r
-## Notes: Track vendors you talk to
-## Author: EasyLife
-## Version: 1.2.0
-## Dependencies: EasyLife
-
-..\EasyLife\VendorTracker.lua

@@ -1,8 +1,0 @@
-## Interface: 11508
-## Title: |cff69ccf0EasyLife: Advertiser|r |cffffff00v1.2|r
-## Notes: Ad listener and sender
-## Author: EasyLife
-## Version: 1.2.0
-## Dependencies: EasyLife
-
-..\EasyLife\Advertiser.lua

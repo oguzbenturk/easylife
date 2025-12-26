@@ -1,0 +1,10 @@
+## EasyLife_Advertiser.toc
+
+## Interface: 11508
+## Title: EasyLife Advertiser
+## Notes: Advertiser module for the EasyLife addon
+## Author: Your Name
+## Version: 1.0.0
+
+EasyLife/Advertiser.lua
+EasyLife/Locales.lua

@@ -1,0 +1,13 @@
+## EasyLife_VendorTracker.toc
+
+## Interface: 11508
+## Title: EasyLife Vendor Tracker
+## Notes: Tracks vendor-related activities.
+## Author: YourName
+## Version: 1.0.0
+
+EasyLife/VendorTracker.lua
+EasyLife/Locales.lua
+EasyLife/Config.lua
+EasyLife/Core.lua
+EasyLife/Minimap.lua

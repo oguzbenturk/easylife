@@ -859,22 +859,90 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
     return container
 end
 
+local autoInviteStatusTimer = nil
+
 local function BuildAutoInviteTab(content, db)
-    local y = -12
+    local y = -8
     local W = 330
     
-    -- Enable checkbox
-    local enableCb = CreateCheckbox(content, 12, y, "Enable auto-invite on keyword match", db.autoInvite, function(cb)
-        local enabled = cb:GetChecked()
-        getDB().autoInvite = enabled
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- STATUS HEADER
+    -- ═══════════════════════════════════════════════════════════════════════
+    local header = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    header:SetPoint("TOPLEFT", 4, y)
+    header:SetSize(W + 8, 55)
+    header:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = {left = 0, right = 0, top = 0, bottom = 0},
+    })
+    header:SetBackdropColor(0.08, 0.07, 0.05, 1)
+    header:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
+    
+    -- Title
+    local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -6)
+    title:SetText("|cffFFD700Auto-Invite|r")
+    
+    -- Status text
+    local statusText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusText:SetPoint("LEFT", 10, -8)
+    
+    -- Stats
+    local statsText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statsText:SetPoint("RIGHT", -80, -8)
+    
+    -- Toggle button
+    local toggleBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
+    toggleBtn:SetSize(60, 20)
+    toggleBtn:SetPoint("RIGHT", -8, -8)
+    
+    local function RefreshHeader()
+        local d = getDB()
+        if not d.enabled then
+            statusText:SetText("|cffFF6666Module Stopped|r")
+            header:SetBackdropBorderColor(0.4, 0.2, 0.2, 0.8)
+            toggleBtn:SetText("Start")
+            toggleBtn:Disable()
+        elseif d.autoInvite then
+            statusText:SetText("|cff00FF00● Listening|r")
+            header:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
+            toggleBtn:SetText("Disable")
+            toggleBtn:Enable()
+        else
+            statusText:SetText("|cff888888● Disabled|r")
+            header:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+            toggleBtn:SetText("Enable")
+            toggleBtn:Enable()
+        end
+        statsText:SetText("|cff888888Invites:|r " .. state.invitesSent)
+    end
+    
+    toggleBtn:SetScript("OnClick", function()
+        local d = getDB()
+        d.autoInvite = not d.autoInvite
         Advertiser:UpdateState()
-        if enabled then
+        RefreshHeader()
+        if d.autoInvite then
             EasyLife:Print("|cff00FF00[Auto-Invite]|r Enabled - listening for keywords")
         else
             EasyLife:Print("|cffFF6600[Auto-Invite]|r Disabled")
         end
     end)
-    y = y - 30
+    
+    RefreshHeader()
+    if autoInviteStatusTimer then autoInviteStatusTimer:Cancel() end
+    autoInviteStatusTimer = C_Timer.NewTicker(1, RefreshHeader)
+    header:SetScript("OnHide", function()
+        if autoInviteStatusTimer then autoInviteStatusTimer:Cancel(); autoInviteStatusTimer = nil end
+    end)
+    
+    y = y - 65
+    
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- SETTINGS
+    -- ═══════════════════════════════════════════════════════════════════════
     
     -- Invite delay
     local delayLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -888,12 +956,12 @@ local function BuildAutoInviteTab(content, db)
     y = y - 34
     
     -- Whisper keywords list (with scrolling, input at top)
-    CreateKeywordList(content, 12, y, "|cffFFD700Whisper Keywords|r (triggers on /whisper)", db.whisperKeywords, "whisperKeywords", W, 150)
-    y = y - 160
+    CreateKeywordList(content, 12, y, "|cffFFD700Whisper Keywords|r (triggers on /whisper)", db.whisperKeywords, "whisperKeywords", W, 140)
+    y = y - 150
     
     -- Channel keywords list (with scrolling, input at top)
-    CreateKeywordList(content, 12, y, "|cffFFD700Channel Keywords|r (triggers in chat channels)", db.channelKeywords, "channelKeywords", W, 150)
-    y = y - 160
+    CreateKeywordList(content, 12, y, "|cffFFD700Channel Keywords|r (triggers in chat channels)", db.channelKeywords, "channelKeywords", W, 140)
+    y = y - 150
     
     -- Channels to monitor
     local chanLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -937,80 +1005,107 @@ end
 local sendMessageStatusTimer = nil
 
 local function BuildSendMessageTab(content, db)
-    local y = -12
+    local y = -8
     local W = 330
     
-    -- Status Header (like main Advertiser header)
-    local statusBox = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    statusBox:SetPoint("TOPLEFT", 8, y)
-    statusBox:SetSize(W - 4, 50)
-    statusBox:SetBackdrop({
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- STATUS HEADER
+    -- ═══════════════════════════════════════════════════════════════════════
+    local header = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    header:SetPoint("TOPLEFT", 4, y)
+    header:SetSize(W + 8, 55)
+    header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
-        insets = {left = 2, right = 2, top = 2, bottom = 2},
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = {left = 0, right = 0, top = 0, bottom = 0},
     })
-    statusBox:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
-    statusBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+    header:SetBackdropColor(0.08, 0.07, 0.05, 1)
+    header:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
     
-    local statusLabel = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    statusLabel:SetPoint("TOPLEFT", 10, -8)
-    statusLabel:SetText("|cffAAAAAABroadcast Status:|r")
+    -- Title
+    local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -6)
+    title:SetText("|cffFFD700Send Message|r")
     
-    local statusText = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    statusText:SetPoint("TOPLEFT", statusLabel, "BOTTOMLEFT", 0, -4)
+    -- Status text
+    local statusText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusText:SetPoint("LEFT", 10, -8)
     
-    local cooldownText = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    cooldownText:SetPoint("TOPRIGHT", -10, -8)
+    -- Cooldown/Stats
+    local cooldownText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cooldownText:SetPoint("RIGHT", -80, -2)
     
-    local adsSentText = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    adsSentText:SetPoint("TOPRIGHT", cooldownText, "BOTTOMRIGHT", 0, -4)
+    local statsText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statsText:SetPoint("RIGHT", -80, -14)
     
-    local function RefreshStatus()
+    -- Send button in header
+    local sendBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
+    sendBtn:SetSize(60, 20)
+    sendBtn:SetPoint("RIGHT", -8, -8)
+    sendBtn:SetText("Send")
+    sendBtn:SetScript("OnClick", function()
+        Advertiser:SendAd()
+    end)
+    
+    local function RefreshHeader()
         local d = getDB()
         local cd = Advertiser:GetCooldownRemaining()
         
-        -- Main status
         if not d.enabled then
-            statusText:SetText("|cffFF6666● Advertiser Stopped|r")
-            statusBox:SetBackdropBorderColor(0.4, 0.2, 0.2, 0.8)
+            statusText:SetText("|cffFF6666Module Stopped|r")
+            header:SetBackdropBorderColor(0.4, 0.2, 0.2, 0.8)
+            sendBtn:Disable()
         elseif state.messageQueued then
-            statusText:SetText("|cff00FF00● MESSAGE READY - Click to Send!|r")
-            statusBox:SetBackdropBorderColor(0.2, 0.6, 0.2, 1)
+            statusText:SetText("|cff00FF00● READY TO SEND|r")
+            header:SetBackdropBorderColor(0.2, 0.6, 0.2, 1)
+            sendBtn:Enable()
+            sendBtn:SetText("SEND!")
+        elseif state.onCooldown then
+            statusText:SetText("|cffFFD700● On Cooldown|r")
+            header:SetBackdropBorderColor(0.5, 0.4, 0.1, 0.8)
+            sendBtn:Disable()
+            sendBtn:SetText("Wait")
         elseif d.autoSendEnabled then
-            if state.onCooldown then
-                statusText:SetText("|cffFFD700● Auto-Send Active|r |cff888888(waiting)|r")
-                statusBox:SetBackdropBorderColor(0.5, 0.4, 0.1, 0.8)
-            else
-                statusText:SetText("|cff00FF00● Auto-Send Active|r")
-                statusBox:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
-            end
+            statusText:SetText("|cff00FF00● Auto-Send ON|r")
+            header:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
+            sendBtn:Enable()
+            sendBtn:SetText("Send")
         else
             statusText:SetText("|cff888888● Manual Mode|r")
-            statusBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+            header:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+            sendBtn:Enable()
+            sendBtn:SetText("Send")
         end
         
-        -- Cooldown
-        if cd > 0 then
-            cooldownText:SetText("|cffFFD700Cooldown:|r " .. cd .. "s")
-        else
-            cooldownText:SetText("|cff00FF00Ready|r")
-        end
-        
-        -- Ads sent this session
-        adsSentText:SetText("|cff888888Sent:|r " .. state.adsSent)
+        cooldownText:SetText(cd > 0 and ("|cffFFD700CD:|r " .. cd .. "s") or "|cff00FF00Ready|r")
+        statsText:SetText("|cff888888Sent:|r " .. state.adsSent)
     end
     
-    RefreshStatus()
-    
-    -- Update timer
+    RefreshHeader()
     if sendMessageStatusTimer then sendMessageStatusTimer:Cancel() end
-    sendMessageStatusTimer = C_Timer.NewTicker(0.5, RefreshStatus)
-    statusBox:SetScript("OnHide", function()
+    sendMessageStatusTimer = C_Timer.NewTicker(0.5, RefreshHeader)
+    header:SetScript("OnHide", function()
         if sendMessageStatusTimer then sendMessageStatusTimer:Cancel(); sendMessageStatusTimer = nil end
     end)
     
-    y = y - 60
+    y = y - 65
+    
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- MESSAGE CONFIGURATION
+    -- ═══════════════════════════════════════════════════════════════════════
+    
+    -- Message
+    local msgLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    msgLabel:SetPoint("TOPLEFT", 12, y)
+    msgLabel:SetText("Message:")
+    y = y - 18
+    
+    local _, msgEdit = CreateEditBox(content, 12, y, W, 50, db.adMessage, true)
+    msgEdit:SetScript("OnTextChanged", function(self)
+        getDB().adMessage = self:GetText()
+    end)
+    y = y - 58
     
     -- Target channels
     local targetLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -1041,19 +1136,7 @@ local function BuildSendMessageTab(content, db)
         y = y - 32
     end
     
-    -- Message
-    local msgLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    msgLabel:SetPoint("TOPLEFT", 12, y)
-    msgLabel:SetText("Message:")
-    y = y - 18
-    
-    local _, msgEdit = CreateEditBox(content, 12, y, W, 60, db.adMessage, true)
-    msgEdit:SetScript("OnTextChanged", function(self)
-        getDB().adMessage = self:GetText()
-    end)
-    y = y - 70
-    
-    -- Cooldown
+    -- Cooldown setting
     local cdLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     cdLabel:SetPoint("TOPLEFT", 12, y)
     cdLabel:SetText("Cooldown (sec):")
@@ -1064,130 +1147,92 @@ local function BuildSendMessageTab(content, db)
     end)
     y = y - 34
     
-    -- Send button
-    local sendBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    sendBtn:SetPoint("TOPLEFT", 12, y)
-    sendBtn:SetSize(100, 24)
-    sendBtn:SetText("Send Now")
-    sendBtn:SetScript("OnClick", function()
-        Advertiser:SendAd()
-    end)
-    y = y - 40
-    
-    -- Separator
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- AUTO-SEND SECTION
+    -- ═══════════════════════════════════════════════════════════════════════
     local sep1 = content:CreateTexture(nil, "ARTWORK")
     sep1:SetPoint("TOPLEFT", 12, y)
     sep1:SetSize(W, 1)
     sep1:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    y = y - 16
+    y = y - 12
     
-    -- Floating button
-    local floatHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    local autoHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    autoHeader:SetPoint("TOPLEFT", 12, y)
+    autoHeader:SetText("|cffFFD700Auto-Send Timer|r")
+    y = y - 22
+    
+    CreateCheckbox(content, 12, y, "Enable auto-send", db.autoSendEnabled, function(cb)
+        local d = getDB()
+        d.autoSendEnabled = cb:GetChecked()
+        if d.autoSendEnabled then
+            Advertiser:StartAutoSend()
+            EasyLife:Print("|cff00FF00[Auto-Send]|r Enabled")
+        else
+            Advertiser:StopAutoSend()
+            EasyLife:Print("|cffFF6600[Auto-Send]|r Disabled")
+        end
+    end)
+    
+    local intLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    intLabel:SetPoint("LEFT", 180, y + 2)
+    intLabel:SetText("Interval:")
+    
+    local _, intEdit = CreateNumberBox(content, 230, y, 50, db.autoSendInterval)
+    intEdit:SetScript("OnTextChanged", function(self)
+        getDB().autoSendInterval = math.max(10, tonumber(self:GetText()) or 60)
+    end)
+    
+    local secLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    secLabel:SetPoint("LEFT", 285, y + 2)
+    secLabel:SetText("sec")
+    y = y - 28
+    
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- FLOATING BUTTON & KEYBIND
+    -- ═══════════════════════════════════════════════════════════════════════
+    local sep2 = content:CreateTexture(nil, "ARTWORK")
+    sep2:SetPoint("TOPLEFT", 12, y)
+    sep2:SetSize(W, 1)
+    sep2:SetColorTexture(0.4, 0.4, 0.4, 0.5)
+    y = y - 12
+    
+    local floatHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     floatHeader:SetPoint("TOPLEFT", 12, y)
-    floatHeader:SetText("|cffFFD700Floating Button|r")
-    y = y - 24
+    floatHeader:SetText("|cffFFD700Quick Access|r")
+    y = y - 22
     
-    CreateCheckbox(content, 12, y, "Show floating send button", db.useFloatingButton, function(cb)
+    CreateCheckbox(content, 12, y, "Show floating button", db.useFloatingButton, function(cb)
         getDB().useFloatingButton = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
-    y = y - 26
     
-    CreateCheckbox(content, 28, y, "Lock position", db.floatingButtonLocked, function(cb)
+    CreateCheckbox(content, 180, y, "Lock position", db.floatingButtonLocked, function(cb)
         getDB().floatingButtonLocked = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
     y = y - 26
     
-    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    resetBtn:SetPoint("TOPLEFT", 28, y)
-    resetBtn:SetSize(110, 22)
-    resetBtn:SetText("Reset Position")
-    resetBtn:SetScript("OnClick", function()
-        local d = getDB()
-        d.floatingX = 200
-        d.floatingY = -200
-        Advertiser:UpdateFloatingButton()
-    end)
-    y = y - 36
-    
-    -- Separator
-    local sep2 = content:CreateTexture(nil, "ARTWORK")
-    sep2:SetPoint("TOPLEFT", 12, y)
-    sep2:SetSize(W, 1)
-    sep2:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    y = y - 16
-    
-    -- Auto Send Timer
-    local autoHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    autoHeader:SetPoint("TOPLEFT", 12, y)
-    autoHeader:SetText("|cffFFD700Auto Send Timer|r")
-    y = y - 24
-    
-    CreateCheckbox(content, 12, y, "Enable auto-send timer", db.autoSendEnabled, function(cb)
-        local d = getDB()
-        d.autoSendEnabled = cb:GetChecked()
-        if d.autoSendEnabled then
-            Advertiser:StartAutoSend()
-        else
-            Advertiser:StopAutoSend()
-        end
-    end)
-    y = y - 26
-    
-    local intLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    intLabel:SetPoint("TOPLEFT", 28, y)
-    intLabel:SetText("Interval (sec):")
-    
-    local _, intEdit = CreateNumberBox(content, 130, y - 2, 50, db.autoSendInterval)
-    intEdit:SetScript("OnTextChanged", function(self)
-        getDB().autoSendInterval = math.max(10, tonumber(self:GetText()) or 60)
-    end)
-    y = y - 26
-    
-    local autoHint = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    autoHint:SetPoint("TOPLEFT", 28, y)
-    autoHint:SetText("|cff888888Timer queues → Button glows → Click to send|r")
-    y = y - 28
-    
-    -- Separator
-    local sep3 = content:CreateTexture(nil, "ARTWORK")
-    sep3:SetPoint("TOPLEFT", 12, y)
-    sep3:SetSize(W, 1)
-    sep3:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    y = y - 16
-    
-    -- Keybind
-    local keyHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    keyHeader:SetPoint("TOPLEFT", 12, y)
-    keyHeader:SetText("|cffFFD700Keybind|r")
-    y = y - 24
-    
     CreateCheckbox(content, 12, y, "Enable keybind", db.keybindEnabled, function(cb)
         getDB().keybindEnabled = cb:GetChecked()
         Advertiser:SetupKeybind()
     end)
-    y = y - 26
     
-    local keyLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    keyLabel:SetPoint("TOPLEFT", 12, y)
-    keyLabel:SetText("Key:")
-    
+    -- Keybind button
     local keyBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-    keyBtn:SetPoint("LEFT", keyLabel, "RIGHT", 10, 0)
-    keyBtn:SetSize(100, 24)
+    keyBtn:SetPoint("LEFT", 140, y + 2)
+    keyBtn:SetSize(80, 20)
     keyBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
+        edgeSize = 8,
         insets = {left = 2, right = 2, top = 2, bottom = 2},
     })
     keyBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
     keyBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     
-    local keyText = keyBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local keyText = keyBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     keyText:SetPoint("CENTER")
-    keyText:SetText(db.keybindKey or "|cff666666Click to set|r")
+    keyText:SetText(db.keybindKey or "|cff666666Set key|r")
     
     local capturing = false
     keyBtn:EnableKeyboard(false)
@@ -1195,7 +1240,7 @@ local function BuildSendMessageTab(content, db)
     keyBtn:SetScript("OnClick", function(self)
         if not capturing then
             capturing = true
-            keyText:SetText("|cffFFFF00Press key...|r")
+            keyText:SetText("|cffFFFF00...|r")
             self:SetBackdropBorderColor(1, 0.8, 0, 1)
             self:EnableKeyboard(true)
         end
@@ -1207,7 +1252,7 @@ local function BuildSendMessageTab(content, db)
         
         if key == "ESCAPE" then
             capturing = false
-            keyText:SetText(db.keybindKey or "|cff666666Click to set|r")
+            keyText:SetText(db.keybindKey or "|cff666666Set key|r")
             self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
             self:EnableKeyboard(false)
             return
@@ -1228,8 +1273,18 @@ local function BuildSendMessageTab(content, db)
     end)
     
     local clearKeyBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    clearKeyBtn:SetPoint("LEFT", keyBtn, "RIGHT", 8, 0)
-    clearKeyBtn:SetSize(50, 22)
+    clearKeyBtn:SetPoint("LEFT", keyBtn, "RIGHT", 4, 0)
+    clearKeyBtn:SetSize(40, 20)
+    clearKeyBtn:SetText("Clear")
+    clearKeyBtn:SetScript("OnClick", function()
+        getDB().keybindKey = nil
+        keyText:SetText("|cff666666Set key|r")
+        Advertiser:SetupKeybind()
+    end)
+    y = y - 30
+    
+    content:SetHeight(math.abs(y) + 20)
+end
     clearKeyBtn:SetText("Clear")
     clearKeyBtn:SetScript("OnClick", function()
         getDB().keybindKey = nil
@@ -1267,47 +1322,118 @@ end
 -- TAB: AUTO REPLY
 --------------------------------------------------------------------------------
 
+local autoReplyStatusTimer = nil
+
 local function BuildAutoReplyTab(content, db)
-    local y = -12
+    local y = -8
     local W = 330
     local ruleRows = {}
     
-    -- Enable
-    CreateCheckbox(content, 12, y, "Enable auto-reply to whispers", db.autoReplyEnabled, function(cb)
-        local enabled = cb:GetChecked()
-        getDB().autoReplyEnabled = enabled
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- STATUS HEADER
+    -- ═══════════════════════════════════════════════════════════════════════
+    local header = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    header:SetPoint("TOPLEFT", 4, y)
+    header:SetSize(W + 8, 55)
+    header:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = {left = 0, right = 0, top = 0, bottom = 0},
+    })
+    header:SetBackdropColor(0.08, 0.07, 0.05, 1)
+    header:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
+    
+    -- Title
+    local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -6)
+    title:SetText("|cffFFD700Auto-Reply|r")
+    
+    -- Status text
+    local statusText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusText:SetPoint("LEFT", 10, -8)
+    
+    -- Stats
+    local statsText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statsText:SetPoint("RIGHT", -80, -8)
+    
+    -- Toggle button
+    local toggleBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
+    toggleBtn:SetSize(60, 20)
+    toggleBtn:SetPoint("RIGHT", -8, -8)
+    
+    local function RefreshHeader()
+        local d = getDB()
+        if not d.enabled then
+            statusText:SetText("|cffFF6666Module Stopped|r")
+            header:SetBackdropBorderColor(0.4, 0.2, 0.2, 0.8)
+            toggleBtn:SetText("Start")
+            toggleBtn:Disable()
+        elseif d.autoReplyEnabled then
+            statusText:SetText("|cff00FF00● Listening|r")
+            header:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
+            toggleBtn:SetText("Disable")
+            toggleBtn:Enable()
+        else
+            statusText:SetText("|cff888888● Disabled|r")
+            header:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+            toggleBtn:SetText("Enable")
+            toggleBtn:Enable()
+        end
+        statsText:SetText("|cff888888Replies:|r " .. state.repliesSent)
+    end
+    
+    toggleBtn:SetScript("OnClick", function()
+        local d = getDB()
+        d.autoReplyEnabled = not d.autoReplyEnabled
         Advertiser:UpdateState()
-        if enabled then
+        RefreshHeader()
+        if d.autoReplyEnabled then
             EasyLife:Print("|cff00FF00[Auto-Reply]|r Enabled - will respond to keyword whispers")
         else
             EasyLife:Print("|cffFF6600[Auto-Reply]|r Disabled")
         end
     end)
-    y = y - 30
+    
+    RefreshHeader()
+    if autoReplyStatusTimer then autoReplyStatusTimer:Cancel() end
+    autoReplyStatusTimer = C_Timer.NewTicker(1, RefreshHeader)
+    header:SetScript("OnHide", function()
+        if autoReplyStatusTimer then autoReplyStatusTimer:Cancel(); autoReplyStatusTimer = nil end
+    end)
+    
+    y = y - 65
+    
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- SETTINGS
+    -- ═══════════════════════════════════════════════════════════════════════
     
     -- Cooldown
     local cdLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     cdLabel:SetPoint("TOPLEFT", 12, y)
     cdLabel:SetText("Cooldown per player (sec):")
     
-    local _, cdEdit = CreateNumberBox(content, 180, y - 2, 50, db.autoReplyCooldown)
+    local _, cdEdit = CreateNumberBox(content, 190, y - 2, 50, db.autoReplyCooldown)
     cdEdit:SetScript("OnTextChanged", function(self)
         getDB().autoReplyCooldown = math.max(1, tonumber(self:GetText()) or 10)
     end)
     y = y - 34
     
-    -- Separator
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- RESPONSE RULES
+    -- ═══════════════════════════════════════════════════════════════════════
     local sep = content:CreateTexture(nil, "ARTWORK")
     sep:SetPoint("TOPLEFT", 12, y)
     sep:SetSize(W, 1)
     sep:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    y = y - 16
+    y = y - 12
     
-    -- Rules header
-    local rulesHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    rulesHeader:SetPoint("TOPLEFT", 12, y)
-    rulesHeader:SetText("|cffFFD700Response Rules|r")
-    y = y - 24
+    -- Add rule button
+    local addBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    addBtn:SetPoint("TOPLEFT", 12, y)
+    addBtn:SetSize(90, 22)
+    addBtn:SetText("+ Add Rule")
+    y = y - 30
     
     db.autoReplyRules = db.autoReplyRules or {}
     
@@ -1421,38 +1547,14 @@ local function BuildAutoReplyTab(content, db)
         rulesContainer:SetHeight(math.max(math.abs(ruleY), 10))
     end
     
-    -- Add rule button
-    local addBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    addBtn:SetPoint("TOPLEFT", 12, y)
-    addBtn:SetSize(90, 22)
-    addBtn:SetText("+ Add Rule")
     addBtn:SetScript("OnClick", function()
         table.insert(db.autoReplyRules, {enabled = true, keywords = "", response = ""})
         RefreshRules()
     end)
-    y = y - 30
-    
-    -- Move container
-    rulesContainer:ClearAllPoints()
-    rulesContainer:SetPoint("TOPLEFT", 12, y)
     
     RefreshRules()
     
     y = y - math.max(#db.autoReplyRules * 84, 10) - 20
-    
-    -- Stats
-    local statsLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    statsLabel:SetPoint("TOPLEFT", 12, y)
-    statsLabel:SetText("|cffFFD700Replies sent:|r " .. state.repliesSent)
-    
-    local ticker = C_Timer.NewTicker(1, function()
-        if statsLabel and statsLabel:IsVisible() then
-            statsLabel:SetText("|cffFFD700Replies sent:|r " .. state.repliesSent)
-        end
-    end)
-    content:HookScript("OnHide", function() ticker:Cancel() end)
-    
-    y = y - 30
     
     content:SetHeight(math.abs(y) + 20)
 end
@@ -1540,86 +1642,9 @@ function Advertiser:BuildConfigUI(parent)
         end
     end
     
-    -- Header (below tabs)
-    local header = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    header:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", tabBar, "BOTTOMRIGHT", 0, 0)
-    header:SetHeight(50)
-    header:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = {left = 0, right = 0, top = 0, bottom = 0},
-    })
-    header:SetBackdropColor(0.08, 0.07, 0.05, 1)
-    header:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
-    
-    local title = header:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -6)
-    title:SetText("|cffFFD700Advertiser|r")
-    
-    local subtitle = header:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
-    subtitle:SetText("Auto-invite, ads, and replies")
-    
-    -- Status
-    local statusText = header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statusText:SetPoint("LEFT", 10, -4)
-    
-    local cdText = header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    cdText:SetPoint("LEFT", statusText, "RIGHT", 10, 0)
-    
-    -- Buttons
-    local stopBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
-    stopBtn:SetSize(50, 20)
-    stopBtn:SetPoint("RIGHT", -8, -4)
-    stopBtn:SetText("Stop")
-    
-    local startBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
-    startBtn:SetSize(50, 20)
-    startBtn:SetPoint("RIGHT", stopBtn, "LEFT", -4, 0)
-    startBtn:SetText("Start")
-    
-    local function RefreshHeader()
-        local d = getDB()
-        local cd = Advertiser:GetCooldownRemaining()
-        if d.enabled then
-            statusText:SetText("|cff00FF00Running|r")
-            startBtn:Disable()
-            stopBtn:Enable()
-        else
-            statusText:SetText("|cffFF6666Stopped|r")
-            startBtn:Enable()
-            stopBtn:Disable()
-        end
-        cdText:SetText(cd > 0 and ("|cffFFD700CD:|r " .. cd .. "s") or "|cff888888Ready|r")
-    end
-    
-    startBtn:SetScript("OnClick", function()
-        getDB().enabled = true
-        Advertiser:UpdateState()
-        RefreshHeader()
-        EasyLife:Print("|cff00FF00[Advertiser]|r Started - all enabled features are now active")
-    end)
-    
-    stopBtn:SetScript("OnClick", function()
-        getDB().enabled = false
-        Advertiser:UpdateState()
-        RefreshHeader()
-        EasyLife:Print("|cffFF6600[Advertiser]|r Stopped - all features paused")
-    end)
-    
-    RefreshHeader()
-    
-    if headerTimer then headerTimer:Cancel() end
-    headerTimer = C_Timer.NewTicker(0.5, RefreshHeader)
-    header:HookScript("OnHide", function()
-        if headerTimer then headerTimer:Cancel(); headerTimer = nil end
-    end)
-    
-    -- Content area (below header)
+    -- Content area (directly below tabs - each tab has its own header now)
     local contentArea = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    contentArea:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    contentArea:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
     contentArea:SetPoint("BOTTOMRIGHT", 0, 0)
     contentArea:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1667,6 +1692,14 @@ function Advertiser:CleanupUI()
     if sendMessageStatusTimer then
         sendMessageStatusTimer:Cancel()
         sendMessageStatusTimer = nil
+    end
+    if autoInviteStatusTimer then
+        autoInviteStatusTimer:Cancel()
+        autoInviteStatusTimer = nil
+    end
+    if autoReplyStatusTimer then
+        autoReplyStatusTimer:Cancel()
+        autoReplyStatusTimer = nil
     end
 end
 

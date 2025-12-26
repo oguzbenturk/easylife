@@ -61,6 +61,7 @@ local function createFrame()
   
   -- Left sidebar for module buttons
   sidebar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  sidebar:SetWidth(140)
   sidebar:SetPoint("TOPLEFT", 14, -18)
   sidebar:SetPoint("BOTTOMLEFT", 14, 14)
   sidebar:SetBackdrop({

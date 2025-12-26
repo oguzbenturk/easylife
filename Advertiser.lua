@@ -934,11 +934,16 @@ local function BuildAutoInviteTab(content, db)
     local y = -8
     local W = 330
     
+    -- Create a centered container for all content
+    local container = CreateFrame("Frame", nil, content)
+    container:SetWidth(W + 8)
+    container:SetPoint("TOP", content, "TOP", 0, 0)
+    
     -- ═══════════════════════════════════════════════════════════════════════
     -- STATUS HEADER
     -- ═══════════════════════════════════════════════════════════════════════
-    local header = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    header:SetPoint("TOPLEFT", 4, y)
+    local header = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    header:SetPoint("TOP", 0, y)
     header:SetSize(W + 8, 55)
     header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1014,47 +1019,47 @@ local function BuildAutoInviteTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     
     -- Invite delay
-    local delayLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    delayLabel:SetPoint("TOPLEFT", 12, y)
+    local delayLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    delayLabel:SetPoint("TOPLEFT", 4, y)
     delayLabel:SetText("Invite delay (sec):")
     
-    local _, delayEdit = CreateNumberBox(content, 140, y - 2, 50, db.autoInviteDelay)
+    local _, delayEdit = CreateNumberBox(container, 132, y - 2, 50, db.autoInviteDelay)
     delayEdit:SetScript("OnTextChanged", function(self)
         getDB().autoInviteDelay = math.max(0, tonumber(self:GetText()) or 0)
     end)
     y = y - 34
     
     -- Whisper keywords list (with scrolling, input at top)
-    CreateKeywordList(content, 12, y, "|cffFFD700Whisper Keywords|r (triggers on /whisper)", db.whisperKeywords, "whisperKeywords", W, 140)
+    CreateKeywordList(container, 4, y, "|cffFFD700Whisper Keywords|r (triggers on /whisper)", db.whisperKeywords, "whisperKeywords", W, 140)
     y = y - 150
     
     -- Channel keywords list (with scrolling, input at top)
-    CreateKeywordList(content, 12, y, "|cffFFD700Channel Keywords|r (triggers in chat channels)", db.channelKeywords, "channelKeywords", W, 140)
+    CreateKeywordList(container, 4, y, "|cffFFD700Channel Keywords|r (triggers in chat channels)", db.channelKeywords, "channelKeywords", W, 140)
     y = y - 150
     
     -- Channels to monitor
-    local chanLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    chanLabel:SetPoint("TOPLEFT", 12, y)
+    local chanLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    chanLabel:SetPoint("TOPLEFT", 4, y)
     chanLabel:SetText("Channels to monitor:")
     y = y - 22
     
     local channels = GetJoinedChannels()
     if #channels == 0 then
-        local noText = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        noText:SetPoint("TOPLEFT", 16, y)
+        local noText = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        noText:SetPoint("TOPLEFT", 8, y)
         noText:SetText("|cff666666No channels joined|r")
         y = y - 20
     else
-        local col, xPos = 0, 12
+        local col, xPos = 0, 4
         for _, ch in ipairs(channels) do
             if col >= 3 then
-                col, xPos = 0, 12
+                col, xPos = 0, 4
                 y = y - 26
             end
             if db.monitoredChannels[ch.name] == nil then
                 db.monitoredChannels[ch.name] = true
             end
-            local cb = CreateCheckbox(content, xPos, y, ch.name, db.monitoredChannels[ch.name], function(self)
+            local cb = CreateCheckbox(container, xPos, y, ch.name, db.monitoredChannels[ch.name], function(self)
                 getDB().monitoredChannels[ch.name] = self:GetChecked()
             end)
             cb.text:SetWidth(90)
@@ -1064,6 +1069,7 @@ local function BuildAutoInviteTab(content, db)
         y = y - 30
     end
     
+    container:SetHeight(math.abs(y) + 20)
     content:SetHeight(math.abs(y) + 20)
 end
 
@@ -1077,11 +1083,16 @@ local function BuildSendMessageTab(content, db)
     local y = -8
     local W = 330
     
+    -- Create a centered container for all content
+    local container = CreateFrame("Frame", nil, content)
+    container:SetWidth(W + 8)
+    container:SetPoint("TOP", content, "TOP", 0, 0)
+    
     -- ═══════════════════════════════════════════════════════════════════════
     -- STATUS HEADER
     -- ═══════════════════════════════════════════════════════════════════════
-    local header = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    header:SetPoint("TOPLEFT", 4, y)
+    local header = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    header:SetPoint("TOP", 0, y)
     header:SetSize(W + 8, 55)
     header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1161,41 +1172,58 @@ local function BuildSendMessageTab(content, db)
     y = y - 65
     
     -- ═══════════════════════════════════════════════════════════════════════
+    -- ENABLE AUTO-SEND
+    -- ═══════════════════════════════════════════════════════════════════════
+    local autoSendCb = CreateCheckbox(container, 4, y, "Enable Auto-Send", db.autoSendEnabled, function(self)
+        local d = getDB()
+        d.autoSendEnabled = self:GetChecked()
+        Advertiser:UpdateState()
+        RefreshHeader()
+        if d.autoSendEnabled then
+            EasyLife:Print("|cff00FF00[Auto-Send]|r Enabled - messages will queue and send on any key/click")
+        else
+            EasyLife:Print("|cffFF6600[Auto-Send]|r Disabled - manual mode")
+        end
+    end)
+    autoSendCb.text:SetTextColor(1, 0.82, 0)  -- Gold color for emphasis
+    y = y - 28
+    
+    -- ═══════════════════════════════════════════════════════════════════════
     -- MESSAGE CONFIGURATION
     -- ═══════════════════════════════════════════════════════════════════════
     
     -- Message
-    local msgLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    msgLabel:SetPoint("TOPLEFT", 12, y)
+    local msgLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    msgLabel:SetPoint("TOPLEFT", 4, y)
     msgLabel:SetText("Message:")
     y = y - 18
     
-    local _, msgEdit = CreateEditBox(content, 12, y, W, 50, db.adMessage, true)
+    local _, msgEdit = CreateEditBox(container, 4, y, W, 50, db.adMessage, true)
     msgEdit:SetScript("OnTextChanged", function(self)
         getDB().adMessage = self:GetText()
     end)
     y = y - 58
     
     -- Target channels
-    local targetLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    targetLabel:SetPoint("TOPLEFT", 12, y)
+    local targetLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    targetLabel:SetPoint("TOPLEFT", 4, y)
     targetLabel:SetText("Send to channels:")
     y = y - 22
     
     local channels = GetJoinedChannels()
     if #channels == 0 then
-        local noText = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        noText:SetPoint("TOPLEFT", 16, y)
+        local noText = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        noText:SetPoint("TOPLEFT", 8, y)
         noText:SetText("|cff666666No channels joined|r")
         y = y - 20
     else
-        local col, xPos = 0, 12
+        local col, xPos = 0, 4
         for _, ch in ipairs(channels) do
             if col >= 3 then
-                col, xPos = 0, 12
+                col, xPos = 0, 4
                 y = y - 26
             end
-            local cb = CreateCheckbox(content, xPos, y, ch.name, db.adTargetChannels[ch.name], function(self)
+            local cb = CreateCheckbox(container, xPos, y, ch.name, db.adTargetChannels[ch.name], function(self)
                 getDB().adTargetChannels[ch.name] = self:GetChecked()
             end)
             cb.text:SetWidth(90)
@@ -1206,11 +1234,11 @@ local function BuildSendMessageTab(content, db)
     end
     
     -- Cooldown setting
-    local cdLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cdLabel:SetPoint("TOPLEFT", 12, y)
+    local cdLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    cdLabel:SetPoint("TOPLEFT", 4, y)
     cdLabel:SetText("Cooldown (sec):")
     
-    local _, cdEdit = CreateNumberBox(content, 130, y - 2, 50, db.adCooldown)
+    local _, cdEdit = CreateNumberBox(container, 122, y - 2, 50, db.adCooldown)
     cdEdit:SetScript("OnTextChanged", function(self)
         getDB().adCooldown = math.max(1, tonumber(self:GetText()) or 30)
     end)
@@ -1219,18 +1247,18 @@ local function BuildSendMessageTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     -- AUTO-SEND SECTION
     -- ═══════════════════════════════════════════════════════════════════════
-    local sep1 = content:CreateTexture(nil, "ARTWORK")
-    sep1:SetPoint("TOPLEFT", 12, y)
+    local sep1 = container:CreateTexture(nil, "ARTWORK")
+    sep1:SetPoint("TOPLEFT", 4, y)
     sep1:SetSize(W, 1)
     sep1:SetColorTexture(0.4, 0.4, 0.4, 0.5)
     y = y - 12
     
-    local autoHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    autoHeader:SetPoint("TOPLEFT", 12, y)
+    local autoHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    autoHeader:SetPoint("TOPLEFT", 4, y)
     autoHeader:SetText("|cffFFD700Auto-Send Timer|r")
     y = y - 22
     
-    CreateCheckbox(content, 12, y, "Enable auto-send", db.autoSendEnabled, function(cb)
+    CreateCheckbox(container, 4, y, "Enable auto-send", db.autoSendEnabled, function(cb)
         local d = getDB()
         d.autoSendEnabled = cb:GetChecked()
         if d.autoSendEnabled then
@@ -1242,53 +1270,53 @@ local function BuildSendMessageTab(content, db)
         end
     end)
     
-    local intLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intLabel:SetPoint("LEFT", 180, y + 2)
+    local intLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    intLabel:SetPoint("LEFT", 172, y + 2)
     intLabel:SetText("Interval:")
     
-    local _, intEdit = CreateNumberBox(content, 230, y, 50, db.autoSendInterval)
+    local _, intEdit = CreateNumberBox(container, 222, y, 50, db.autoSendInterval)
     intEdit:SetScript("OnTextChanged", function(self)
         getDB().autoSendInterval = math.max(10, tonumber(self:GetText()) or 60)
     end)
     
-    local secLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    secLabel:SetPoint("LEFT", 285, y + 2)
+    local secLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    secLabel:SetPoint("LEFT", 277, y + 2)
     secLabel:SetText("sec")
     y = y - 28
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- FLOATING BUTTON & KEYBIND
     -- ═══════════════════════════════════════════════════════════════════════
-    local sep2 = content:CreateTexture(nil, "ARTWORK")
-    sep2:SetPoint("TOPLEFT", 12, y)
+    local sep2 = container:CreateTexture(nil, "ARTWORK")
+    sep2:SetPoint("TOPLEFT", 4, y)
     sep2:SetSize(W, 1)
     sep2:SetColorTexture(0.4, 0.4, 0.4, 0.5)
     y = y - 12
     
-    local floatHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    floatHeader:SetPoint("TOPLEFT", 12, y)
+    local floatHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    floatHeader:SetPoint("TOPLEFT", 4, y)
     floatHeader:SetText("|cffFFD700Quick Access|r")
     y = y - 22
     
-    CreateCheckbox(content, 12, y, "Show floating button", db.useFloatingButton, function(cb)
+    CreateCheckbox(container, 4, y, "Show floating button", db.useFloatingButton, function(cb)
         getDB().useFloatingButton = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
     
-    CreateCheckbox(content, 180, y, "Lock position", db.floatingButtonLocked, function(cb)
+    CreateCheckbox(container, 172, y, "Lock position", db.floatingButtonLocked, function(cb)
         getDB().floatingButtonLocked = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
     y = y - 26
     
-    CreateCheckbox(content, 12, y, "Enable keybind", db.keybindEnabled, function(cb)
+    CreateCheckbox(container, 4, y, "Enable keybind", db.keybindEnabled, function(cb)
         getDB().keybindEnabled = cb:GetChecked()
         Advertiser:SetupKeybind()
     end)
     
     -- Keybind button
-    local keyBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-    keyBtn:SetPoint("LEFT", 140, y + 2)
+    local keyBtn = CreateFrame("Button", nil, container, "BackdropTemplate")
+    keyBtn:SetPoint("LEFT", 132, y + 2)
     keyBtn:SetSize(80, 20)
     keyBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1341,7 +1369,7 @@ local function BuildSendMessageTab(content, db)
         Advertiser:SetupKeybind()
     end)
     
-    local clearKeyBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    local clearKeyBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
     clearKeyBtn:SetPoint("LEFT", keyBtn, "RIGHT", 4, 0)
     clearKeyBtn:SetSize(40, 20)
     clearKeyBtn:SetText("Clear")
@@ -1352,6 +1380,7 @@ local function BuildSendMessageTab(content, db)
     end)
     y = y - 30
     
+    container:SetHeight(math.abs(y) + 20)
     content:SetHeight(math.abs(y) + 20)
 end
 
@@ -1366,11 +1395,16 @@ local function BuildAutoReplyTab(content, db)
     local W = 330
     local ruleRows = {}
     
+    -- Create a centered container for all content
+    local container = CreateFrame("Frame", nil, content)
+    container:SetWidth(W + 8)
+    container:SetPoint("TOP", content, "TOP", 0, 0)
+    
     -- ═══════════════════════════════════════════════════════════════════════
     -- STATUS HEADER
     -- ═══════════════════════════════════════════════════════════════════════
-    local header = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    header:SetPoint("TOPLEFT", 4, y)
+    local header = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    header:SetPoint("TOP", 0, y)
     header:SetSize(W + 8, 55)
     header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1446,11 +1480,11 @@ local function BuildAutoReplyTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     
     -- Cooldown
-    local cdLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cdLabel:SetPoint("TOPLEFT", 12, y)
+    local cdLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    cdLabel:SetPoint("TOPLEFT", 4, y)
     cdLabel:SetText("Cooldown per player (sec):")
     
-    local _, cdEdit = CreateNumberBox(content, 190, y - 2, 50, db.autoReplyCooldown)
+    local _, cdEdit = CreateNumberBox(container, 182, y - 2, 50, db.autoReplyCooldown)
     cdEdit:SetScript("OnTextChanged", function(self)
         getDB().autoReplyCooldown = math.max(1, tonumber(self:GetText()) or 10)
     end)
@@ -1459,23 +1493,23 @@ local function BuildAutoReplyTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     -- RESPONSE RULES
     -- ═══════════════════════════════════════════════════════════════════════
-    local sep = content:CreateTexture(nil, "ARTWORK")
-    sep:SetPoint("TOPLEFT", 12, y)
+    local sep = container:CreateTexture(nil, "ARTWORK")
+    sep:SetPoint("TOPLEFT", 4, y)
     sep:SetSize(W, 1)
     sep:SetColorTexture(0.4, 0.4, 0.4, 0.5)
     y = y - 12
     
     -- Add rule button
-    local addBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    addBtn:SetPoint("TOPLEFT", 12, y)
+    local addBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
+    addBtn:SetPoint("TOPLEFT", 4, y)
     addBtn:SetSize(90, 22)
     addBtn:SetText("+ Add Rule")
     y = y - 30
     
     db.autoReplyRules = db.autoReplyRules or {}
     
-    local rulesContainer = CreateFrame("Frame", nil, content)
-    rulesContainer:SetPoint("TOPLEFT", 12, y)
+    local rulesContainer = CreateFrame("Frame", nil, container)
+    rulesContainer:SetPoint("TOPLEFT", 4, y)
     rulesContainer:SetSize(W, 100)
     
     local function RefreshRules()
@@ -1593,6 +1627,7 @@ local function BuildAutoReplyTab(content, db)
     
     y = y - math.max(#db.autoReplyRules * 84, 10) - 20
     
+    container:SetHeight(math.abs(y) + 20)
     content:SetHeight(math.abs(y) + 20)
 end
 
@@ -1696,8 +1731,11 @@ function Advertiser:BuildConfigUI(parent)
         scroll:Hide()
         
         local content = CreateFrame("Frame", nil, scroll)
-        content:SetWidth(330)
+        content:SetWidth(scroll:GetWidth() > 0 and scroll:GetWidth() or 440)  -- Use available width
         scroll:SetScrollChild(content)
+        
+        -- Store scroll reference for centering
+        content.scrollFrame = scroll
         
         info.build(content, db)
         tabContents[i] = scroll

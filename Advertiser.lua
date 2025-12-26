@@ -1302,10 +1302,10 @@ local function BuildSendMessageTab(content, db)
     
     -- Interval row (single setting - time between sends)
     local intLabel = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intLabel:SetPoint("TOPLEFT", 8, -50)
+    intLabel:SetPoint("TOPLEFT", 8, -48)
     intLabel:SetText("|cffCCCCCCTime between sends:|r")
     
-    local _, intEdit = CreateNumberBox(autoBox, 130, -48, 50, db.autoSendInterval)
+    local _, intEdit = CreateNumberBox(autoBox, 130, -44, 50, db.autoSendInterval)
     intEdit:SetScript("OnTextChanged", function(self)
         local val = math.max(10, tonumber(self:GetText()) or 60)
         getDB().autoSendInterval = val
@@ -1313,7 +1313,7 @@ local function BuildSendMessageTab(content, db)
     end)
     
     local intSec = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intSec:SetPoint("TOPLEFT", 185, -50)
+    intSec:SetPoint("LEFT", intEdit:GetParent(), "RIGHT", 6, 0)
     intSec:SetText("|cff888888sec|r")
     
     y = y - 78

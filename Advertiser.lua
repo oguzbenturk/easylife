@@ -534,36 +534,16 @@ function Advertiser:EnableAnyKeyDetection(enable)
             end
         end)
         
-        -- Also detect mouse clicks via a global hook
-        anyKeyFrame:RegisterForClicks("AnyUp", "AnyDown")
-        anyKeyFrame:SetScript("OnClick", function(self, button)
-            TrySendQueued()
-        end)
-        
-        -- Hook WorldFrame for clicks anywhere on screen
-        local worldClickFrame = CreateFrame("Button", nil, UIParent)
-        worldClickFrame:SetAllPoints(UIParent)
-        worldClickFrame:SetFrameStrata("BACKGROUND")
-        worldClickFrame:RegisterForClicks("AnyUp")
-        worldClickFrame:SetScript("OnClick", function(self, button)
-            TrySendQueued()
-        end)
-        worldClickFrame:EnableMouse(false)  -- Don't block clicks
-        anyKeyFrame.worldClickFrame = worldClickFrame
+        -- Note: We only use keyboard detection since mouse hooks block game interaction
+        -- Any key press (movement, abilities, etc.) will trigger the send
     end
     
     if enable then
         anyKeyFrame:Show()
         anyKeyFrame:EnableKeyboard(true)
-        if anyKeyFrame.worldClickFrame then
-            anyKeyFrame.worldClickFrame:EnableMouse(true)
-        end
     else
         anyKeyFrame:Hide()
         anyKeyFrame:EnableKeyboard(false)
-        if anyKeyFrame.worldClickFrame then
-            anyKeyFrame.worldClickFrame:EnableMouse(false)
-        end
     end
 end
 
@@ -1735,12 +1715,16 @@ function Advertiser:BuildConfigUI(parent)
     tabBar:SetBackdropColor(0.15, 0.12, 0.08, 1)
     tabBar:SetBackdropBorderColor(0.3, 0.25, 0.15, 1)
     
-    -- Create tab buttons
+    -- Create tab buttons (centered)
     local tabWidth = 100
+    local totalTabsWidth = #tabInfo * tabWidth + (#tabInfo - 1) * 4  -- tabs + gaps
+    local startOffset = (parent:GetWidth() - totalTabsWidth) / 2  -- center offset
+    if startOffset < 4 then startOffset = 4 end  -- minimum padding
+    
     for i, info in ipairs(tabInfo) do
         local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
         tab:SetSize(tabWidth, 26)
-        tab:SetPoint("LEFT", tabBar, "LEFT", 4 + (i-1) * (tabWidth + 4), 0)
+        tab:SetPoint("LEFT", tabBar, "LEFT", startOffset + (i-1) * (tabWidth + 4), 0)
         tab:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",

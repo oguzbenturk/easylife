@@ -183,7 +183,7 @@ local function createSettingsFrame()
   moduleSettingsFrame = CreateFrame("Frame", "EasyLifeModuleSettingsFrame", UIParent, "BackdropTemplate")
   moduleSettingsFrame:SetSize(500, 420)
   moduleSettingsFrame:SetPoint("CENTER")
-  moduleSettingsFrame:SetFrameStrata("FULLSCREEN_DIALOG")  -- Higher than module manager
+  moduleSettingsFrame:SetFrameStrata("HIGH")  -- Allow game interaction while open
   moduleSettingsFrame:SetFrameLevel(50)
   moduleSettingsFrame:SetMovable(true)
   moduleSettingsFrame:EnableMouse(true)

@@ -20,14 +20,14 @@ local DEFAULTS = {
     -- Send Message
     adMessage = "",
     adTargetChannels = {},
-    adCooldown = 30,
+    adCooldown = 60,  -- Deprecated - now synced with autoSendInterval
     useFloatingButton = false,  -- Starts disabled
     floatingButtonLocked = false,
     floatingX = 200,
     floatingY = -200,
     -- Auto Send Timer (starts disabled)
     autoSendEnabled = false,
-    autoSendInterval = 60,
+    autoSendInterval = 60,  -- Time between sends (used for cooldown too)
     -- Keybind (starts disabled)
     keybindEnabled = false,
     keybindKey = nil,
@@ -136,7 +136,7 @@ local cooldownUpdateTimer = nil
 
 function Advertiser:StartCooldown()
     local db = getDB()
-    local duration = db.adCooldown or 30
+    local duration = db.autoSendInterval or 60  -- Use interval as cooldown
     
     state.onCooldown = true
     state.cooldownEnds = GetTime() + duration
@@ -496,9 +496,10 @@ local ANY_KEY_DEBOUNCE = 0.2  -- 200ms debounce to prevent double-sends
 
 function Advertiser:EnableAnyKeyDetection(enable)
     if not anyKeyFrame then
-        anyKeyFrame = CreateFrame("Button", nil, UIParent)
+        anyKeyFrame = CreateFrame("Frame", nil, UIParent)  -- Use Frame, not Button
         anyKeyFrame:SetSize(1, 1)
         anyKeyFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+        anyKeyFrame:EnableMouse(false)  -- Don't capture mouse clicks
         anyKeyFrame:EnableKeyboard(true)
         anyKeyFrame:SetPropagateKeyboardInput(true)
         
@@ -522,16 +523,17 @@ function Advertiser:EnableAnyKeyDetection(enable)
                 return
             end
             
+            -- Don't capture input if user is typing in an edit box
+            local focus = GetCurrentKeyBoardFocus()
+            if focus then
+                return  -- User is typing, don't intercept
+            end
+            
             -- Check if we have a queued message (with debounce)
             if state.messageQueued and getDB().enabled and getDB().autoSendEnabled then
-                self:SetPropagateKeyboardInput(false)
                 TrySendQueued()
-                C_Timer.After(0.1, function()
-                    if anyKeyFrame then
-                        anyKeyFrame:SetPropagateKeyboardInput(true)
-                    end
-                end)
             end
+            -- Always propagate input to allow game interaction
         end)
         
         -- Note: We only use keyboard detection since mouse hooks block game interaction
@@ -554,6 +556,9 @@ end
 function Advertiser:SetupKeybind()
     if not keybindFrame then
         keybindFrame = CreateFrame("Frame", nil, UIParent)
+        keybindFrame:SetSize(1, 1)
+        keybindFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+        keybindFrame:EnableMouse(false)  -- Don't capture mouse
         keybindFrame:SetPropagateKeyboardInput(true)
         keybindFrame:SetScript("OnKeyDown", function(_, key)
             local db = getDB()
@@ -1263,7 +1268,7 @@ local function BuildSendMessageTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     local autoBox = CreateFrame("Frame", nil, container, "BackdropTemplate")
     autoBox:SetPoint("TOPLEFT", 0, y)
-    autoBox:SetSize(W + 8, 95)
+    autoBox:SetSize(W + 8, 70)
     autoBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1293,37 +1298,25 @@ local function BuildSendMessageTab(content, db)
     autoDesc:SetPoint("TOPLEFT", 90, -26)
     autoDesc:SetWidth(W - 90)
     autoDesc:SetJustifyH("LEFT")
-    autoDesc:SetText("|cff888888First msg instant, then queues. Any key/click sends.|r")
+    autoDesc:SetText("|cff888888First msg instant, then press any key to send next.|r")
     
-    -- Interval row
+    -- Interval row (single setting - time between sends)
     local intLabel = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     intLabel:SetPoint("TOPLEFT", 8, -50)
-    intLabel:SetText("|cffCCCCCCInterval:|r")
+    intLabel:SetText("|cffCCCCCCTime between sends:|r")
     
-    local _, intEdit = CreateNumberBox(autoBox, 65, -48, 50, db.autoSendInterval)
+    local _, intEdit = CreateNumberBox(autoBox, 130, -48, 50, db.autoSendInterval)
     intEdit:SetScript("OnTextChanged", function(self)
-        getDB().autoSendInterval = math.max(10, tonumber(self:GetText()) or 60)
+        local val = math.max(10, tonumber(self:GetText()) or 60)
+        getDB().autoSendInterval = val
+        getDB().adCooldown = val  -- Sync cooldown with interval
     end)
     
     local intSec = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intSec:SetPoint("TOPLEFT", 120, -50)
+    intSec:SetPoint("TOPLEFT", 185, -50)
     intSec:SetText("|cff888888sec|r")
     
-    -- Cooldown row  
-    local cdLabel = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    cdLabel:SetPoint("TOPLEFT", 8, -72)
-    cdLabel:SetText("|cffCCCCCCCooldown:|r")
-    
-    local _, cdEdit = CreateNumberBox(autoBox, 75, -70, 50, db.adCooldown)
-    cdEdit:SetScript("OnTextChanged", function(self)
-        getDB().adCooldown = math.max(1, tonumber(self:GetText()) or 30)
-    end)
-    
-    local cdSec = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    cdSec:SetPoint("TOPLEFT", 130, -72)
-    cdSec:SetText("|cff888888sec (between sends)|r")
-    
-    y = y - 102
+    y = y - 78
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- QUICK ACCESS
@@ -1605,11 +1598,11 @@ local function BuildAutoReplyTab(content, db)
             
             -- Keywords
             local kwLabel = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-            kwLabel:SetPoint("TOPLEFT", 26, -6)
-            kwLabel:SetText("Keywords:")
+            kwLabel:SetPoint("TOPLEFT", 45, -6)
+            kwLabel:SetText("|cffFFCC00Keywords:|r")
             
             local kwBg = CreateFrame("Frame", nil, row, "BackdropTemplate")
-            kwBg:SetPoint("TOPLEFT", 80, -2)
+            kwBg:SetPoint("TOPLEFT", 110, -2)
             kwBg:SetPoint("TOPRIGHT", -24, -2)
             kwBg:SetHeight(20)
             kwBg:SetBackdrop({
@@ -1632,11 +1625,11 @@ local function BuildAutoReplyTab(content, db)
             
             -- Response
             local respLabel = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-            respLabel:SetPoint("TOPLEFT", 26, -26)
-            respLabel:SetText("Response:")
+            respLabel:SetPoint("TOPLEFT", 45, -26)
+            respLabel:SetText("|cffFFCC00Response:|r")
             
             local respBg = CreateFrame("Frame", nil, row, "BackdropTemplate")
-            respBg:SetPoint("TOPLEFT", 80, -22)
+            respBg:SetPoint("TOPLEFT", 110, -22)
             respBg:SetPoint("TOPRIGHT", -6, -22)
             respBg:SetHeight(50)
             respBg:SetBackdrop({

@@ -714,10 +714,12 @@ end
 
 function Advertiser:OnRegister()
     local db = getDB()
-    -- Always disable auto-send on load - user must enable manually each session
+    -- Always disable all features on load - user must enable manually each session
+    -- This prevents accidental auto-invites/replies/sends when logging in
+    db.autoInvite = false
     db.autoSendEnabled = false
+    db.autoReplyEnabled = false
     self:UpdateState()
-    -- Don't start auto-send automatically
 end
 
 --------------------------------------------------------------------------------

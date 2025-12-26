@@ -712,6 +712,30 @@ hooksecurefunc("CloseDropDownMenus", function()
   end
 end)
 
+-- Hide all globally-named floating frames (called on PLAYER_ENTERING_WORLD)
+local function hideAllGlobalFrames()
+  -- These frames are parented to UIParent and may persist across reloads
+  local globalFrames = {
+    "EasyLifeBoostilatorSettings",
+    "EasyLifeBoostilatorAddDialog",
+    "EasyLifeBoostilatorResetDialog",
+    "EasyLifeBoostilatorDropdown",
+    "BoostilatorNotifyFrame",
+    "BoostilatorQueueFrame",
+  }
+  for _, frameName in ipairs(globalFrames) do
+    local frame = _G[frameName]
+    if frame and frame.Hide then
+      frame:Hide()
+    end
+  end
+  -- Also hide local ui references if they exist
+  if ui.settingsPanel then ui.settingsPanel:Hide() end
+  if ui.addDialog then ui.addDialog:Hide() end
+  if ui.closeHandler then ui.closeHandler:Hide() end
+  if ui.dropdown then CloseDropDownMenus() end
+end
+
 function Boostilator:RefreshUI()
   if not ui.parent or not ui.rows then return end
   local db = getDB()
@@ -1231,26 +1255,30 @@ function Boostilator:BuildConfigUI(parent)
   settingsBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
   
   -- Settings panel (hidden by default) - WoW themed
-  local settings = CreateFrame("Frame", "EasyLifeBoostilatorSettings", UIParent, "BackdropTemplate")
-  settings:SetSize(340, 480)
-  settings:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
-  settings:SetFrameStrata("DIALOG")
-  settings:SetFrameLevel(100)
-  settings:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-    edgeSize = 16,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
-  })
-  settings:SetBackdropColor(0.1, 0.08, 0.05, 0.98)
-  settings:SetBackdropBorderColor(1, 0.85, 0.3, 1)
-  settings:SetMovable(true)
-  settings:EnableMouse(true)
-  settings:RegisterForDrag("LeftButton")
-  settings:SetScript("OnDragStart", settings.StartMoving)
-  settings:SetScript("OnDragStop", settings.StopMovingOrSizing)
-  settings:SetClampedToScreen(true)
-  settings:Hide()
+  -- Reuse existing global frame if it exists (persists across reloads)
+  local settings = _G["EasyLifeBoostilatorSettings"]
+  if not settings then
+    settings = CreateFrame("Frame", "EasyLifeBoostilatorSettings", UIParent, "BackdropTemplate")
+    settings:SetSize(340, 480)
+    settings:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
+    settings:SetFrameStrata("DIALOG")
+    settings:SetFrameLevel(100)
+    settings:SetBackdrop({
+      bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+      edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
+      edgeSize = 16,
+      insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    settings:SetBackdropColor(0.1, 0.08, 0.05, 0.98)
+    settings:SetBackdropBorderColor(1, 0.85, 0.3, 1)
+    settings:SetMovable(true)
+    settings:EnableMouse(true)
+    settings:RegisterForDrag("LeftButton")
+    settings:SetScript("OnDragStart", settings.StartMoving)
+    settings:SetScript("OnDragStop", settings.StopMovingOrSizing)
+    settings:SetClampedToScreen(true)
+  end
+  settings:Hide()  -- Always hide on UI build
   ui.settingsPanel = settings
   
   -- Settings title
@@ -1991,7 +2019,11 @@ function Boostilator:ShowResetConfirmDialog()
 end
 
 function Boostilator:OnEvent(event, ...)
-  if event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" then
+  if event == "PLAYER_ENTERING_WORLD" then
+    -- Hide all globally-named floating frames on zone change/reload
+    hideAllGlobalFrames()
+    self:RefreshUI()
+  elseif event == "GROUP_ROSTER_UPDATE" then
     self:RefreshUI()
   elseif event == "CHAT_MSG_SYSTEM" then
     local msg = ...

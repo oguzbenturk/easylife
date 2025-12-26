@@ -407,10 +407,18 @@ function VendorTracker:OnRegister()
   
   eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
+      -- Hide any existing global frame first (in case it persisted from before reload)
+      local existingFrame = _G["EasyLifeVendorTrackerFrame"]
+      if existingFrame then
+        existingFrame:Hide()
+      end
+      
       -- Ensure DB is initialized on first login
       if ensureDB() then
         local db = getDB()
-        if db.enabled then
+        -- Only show if BOTH module manager enabled AND individual setting enabled
+        local moduleEnabled = EasyLife_Config_IsModuleEnabled and EasyLife_Config_IsModuleEnabled("VendorTracker")
+        if moduleEnabled and db.enabled then
           VendorTracker:Show()
         end
       end

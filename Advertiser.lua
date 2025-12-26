@@ -1208,64 +1208,96 @@ local function BuildSendMessageTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     -- MESSAGE INPUT
     -- ═══════════════════════════════════════════════════════════════════════
-    local msgLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    msgLabel:SetPoint("TOPLEFT", 4, y)
-    msgLabel:SetText("|cffFFD700Message:|r")
-    y = y - 18
+    -- MESSAGE INPUT
+    -- ═══════════════════════════════════════════════════════════════════════
+    local msgBox = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    msgBox:SetPoint("TOPLEFT", 0, y)
+    msgBox:SetSize(W + 8, 75)
+    msgBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    msgBox:SetBackdropColor(0.1, 0.08, 0.12, 0.9)
+    msgBox:SetBackdropBorderColor(0.35, 0.2, 0.4, 0.8)
     
-    local _, msgEdit = CreateEditBox(container, 4, y, W, 50, db.adMessage, true)
+    local msgLabel = msgBox:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    msgLabel:SetPoint("TOPLEFT", 8, -6)
+    msgLabel:SetText("|cffDA70D6Message|r")
+    
+    local _, msgEdit = CreateEditBox(msgBox, 6, -22, W - 6, 46, db.adMessage, true)
     msgEdit:SetScript("OnTextChanged", function(self)
         getDB().adMessage = self:GetText()
     end)
-    y = y - 56
+    
+    y = y - 82
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- CHANNEL SELECTION
     -- ═══════════════════════════════════════════════════════════════════════
-    local targetLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    targetLabel:SetPoint("TOPLEFT", 4, y)
-    targetLabel:SetText("|cffFFD700Channels:|r")
-    y = y - 20
-    
     local channels = GetJoinedChannels()
+    local channelBoxHeight = #channels == 0 and 35 or (math.ceil(#channels / 3) * 24 + 30)
+    
+    local channelBox = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    channelBox:SetPoint("TOPLEFT", 0, y)
+    channelBox:SetSize(W + 8, channelBoxHeight)
+    channelBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    channelBox:SetBackdropColor(0.06, 0.1, 0.08, 0.9)
+    channelBox:SetBackdropBorderColor(0.2, 0.4, 0.25, 0.8)
+    
+    local targetLabel = channelBox:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    targetLabel:SetPoint("TOPLEFT", 8, -6)
+    targetLabel:SetText("|cff32CD32Channels|r")
+    
     if #channels == 0 then
-        local noText = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        noText:SetPoint("TOPLEFT", 8, y)
+        local noText = channelBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        noText:SetPoint("TOPLEFT", 12, -24)
         noText:SetText("|cff666666No channels joined|r")
-        y = y - 20
     else
-        local col, xPos = 0, 4
-        for _, ch in ipairs(channels) do
-            if col >= 3 then
-                col, xPos = 0, 4
-                y = y - 24
-            end
-            local cb = CreateCheckbox(container, xPos, y, ch.name, db.adTargetChannels[ch.name], function(self)
+        local row, col = 0, 0
+        for i, ch in ipairs(channels) do
+            local xPos = 8 + col * 108
+            local yPos = -24 - row * 24
+            
+            local cb = CreateCheckbox(channelBox, xPos, yPos, ch.name, db.adTargetChannels[ch.name], function(self)
                 getDB().adTargetChannels[ch.name] = self:GetChecked()
             end)
-            cb.text:SetWidth(90)
-            xPos = xPos + 110
+            cb.text:SetWidth(85)
+            
             col = col + 1
+            if col >= 3 then
+                col = 0
+                row = row + 1
+            end
         end
-        y = y - 28
     end
     
-    -- ═══════════════════════════════════════════════════════════════════════
-    -- AUTO-SEND SETTINGS (Combined in one section)
-    -- ═══════════════════════════════════════════════════════════════════════
-    local sep1 = container:CreateTexture(nil, "ARTWORK")
-    sep1:SetPoint("TOPLEFT", 4, y)
-    sep1:SetSize(W, 1)
-    sep1:SetColorTexture(0.4, 0.35, 0.2, 0.8)
-    y = y - 10
+    y = y - channelBoxHeight - 6
     
-    local autoHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    autoHeader:SetPoint("TOPLEFT", 4, y)
-    autoHeader:SetText("|cffFFD700Auto-Send Settings|r")
-    y = y - 20
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- AUTO-SEND SETTINGS
+    -- ═══════════════════════════════════════════════════════════════════════
+    local autoBox = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    autoBox:SetPoint("TOPLEFT", 0, y)
+    autoBox:SetSize(W + 8, 95)
+    autoBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    autoBox:SetBackdropColor(0.12, 0.1, 0.06, 0.9)
+    autoBox:SetBackdropBorderColor(0.4, 0.35, 0.2, 0.8)
     
-    -- Auto-send checkbox with description
-    local autoSendCb = CreateCheckbox(container, 4, y, "Enable Auto-Send", db.autoSendEnabled, function(self)
+    local autoHeader = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    autoHeader:SetPoint("TOPLEFT", 8, -6)
+    autoHeader:SetText("|cffFFD700Auto-Send|r")
+    
+    -- Auto-send checkbox
+    local autoSendCb = CreateCheckbox(autoBox, 8, -24, "Enable", db.autoSendEnabled, function(self)
         local d = getDB()
         d.autoSendEnabled = self:GetChecked()
         if d.autoSendEnabled then
@@ -1275,79 +1307,82 @@ local function BuildSendMessageTab(content, db)
         end
         RefreshHeader()
     end)
-    autoSendCb.text:SetTextColor(1, 0.82, 0)
-    y = y - 20
+    autoSendCb.text:SetTextColor(0.3, 1, 0.3)
     
-    local autoDesc = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    autoDesc:SetPoint("TOPLEFT", 24, y)
-    autoDesc:SetWidth(W - 30)
+    local autoDesc = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    autoDesc:SetPoint("TOPLEFT", 90, -26)
+    autoDesc:SetWidth(W - 90)
     autoDesc:SetJustifyH("LEFT")
-    autoDesc:SetText("|cff888888Sends first message immediately, then queues.\nPress ANY key or click to send queued messages.|r")
-    y = y - 30
+    autoDesc:SetText("|cff888888First msg instant, then queues. Any key/click sends.|r")
     
-    -- Interval and Cooldown on same row
-    local intLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intLabel:SetPoint("TOPLEFT", 4, y)
-    intLabel:SetText("Interval:")
+    -- Interval row
+    local intLabel = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    intLabel:SetPoint("TOPLEFT", 8, -50)
+    intLabel:SetText("|cffCCCCCCInterval:|r")
     
-    local _, intEdit = CreateNumberBox(container, 55, y - 2, 45, db.autoSendInterval)
+    local _, intEdit = CreateNumberBox(autoBox, 65, -48, 50, db.autoSendInterval)
     intEdit:SetScript("OnTextChanged", function(self)
         getDB().autoSendInterval = math.max(10, tonumber(self:GetText()) or 60)
     end)
     
-    local intSec = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intSec:SetPoint("LEFT", 105, y)
-    intSec:SetText("sec")
+    local intSec = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    intSec:SetPoint("TOPLEFT", 120, -50)
+    intSec:SetText("|cff888888sec|r")
     
-    local cdLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    cdLabel:SetPoint("LEFT", 150, y)
-    cdLabel:SetText("Cooldown:")
+    -- Cooldown row  
+    local cdLabel = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    cdLabel:SetPoint("TOPLEFT", 8, -72)
+    cdLabel:SetText("|cffCCCCCCCooldown:|r")
     
-    local _, cdEdit = CreateNumberBox(container, 210, y - 2, 45, db.adCooldown)
+    local _, cdEdit = CreateNumberBox(autoBox, 75, -70, 50, db.adCooldown)
     cdEdit:SetScript("OnTextChanged", function(self)
         getDB().adCooldown = math.max(1, tonumber(self:GetText()) or 30)
     end)
     
-    local cdSec = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    cdSec:SetPoint("LEFT", 260, y)
-    cdSec:SetText("sec")
-    y = y - 30
+    local cdSec = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    cdSec:SetPoint("TOPLEFT", 130, -72)
+    cdSec:SetText("|cff888888sec (between sends)|r")
+    
+    y = y - 102
     
     -- ═══════════════════════════════════════════════════════════════════════
-    -- QUICK ACCESS (Optional features)
+    -- QUICK ACCESS
     -- ═══════════════════════════════════════════════════════════════════════
-    local sep2 = container:CreateTexture(nil, "ARTWORK")
-    sep2:SetPoint("TOPLEFT", 4, y)
-    sep2:SetSize(W, 1)
-    sep2:SetColorTexture(0.4, 0.35, 0.2, 0.8)
-    y = y - 10
+    local quickBox = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    quickBox:SetPoint("TOPLEFT", 0, y)
+    quickBox:SetSize(W + 8, 70)
+    quickBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    quickBox:SetBackdropColor(0.08, 0.1, 0.12, 0.9)
+    quickBox:SetBackdropBorderColor(0.2, 0.35, 0.4, 0.8)
     
-    local quickHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    quickHeader:SetPoint("TOPLEFT", 4, y)
-    quickHeader:SetText("|cffFFD700Quick Access (Optional)|r")
-    y = y - 20
+    local quickHeader = quickBox:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    quickHeader:SetPoint("TOPLEFT", 8, -6)
+    quickHeader:SetText("|cff00CED1Quick Access|r")
     
     -- Floating button row
-    CreateCheckbox(container, 4, y, "Floating button", db.useFloatingButton, function(cb)
+    local floatCb = CreateCheckbox(quickBox, 8, -26, "Floating Button", db.useFloatingButton, function(cb)
         getDB().useFloatingButton = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
     
-    local lockCb = CreateCheckbox(container, 130, y, "Locked", db.floatingButtonLocked, function(cb)
+    local lockCb = CreateCheckbox(quickBox, 140, -26, "Lock", db.floatingButtonLocked, function(cb)
         getDB().floatingButtonLocked = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
-    y = y - 24
     
     -- Keybind row
-    CreateCheckbox(container, 4, y, "Keybind:", db.keybindEnabled, function(cb)
+    local keybindCb = CreateCheckbox(quickBox, 8, -48, "Keybind:", db.keybindEnabled, function(cb)
         getDB().keybindEnabled = cb:GetChecked()
         Advertiser:SetupKeybind()
     end)
     
     -- Keybind button
-    local keyBtn = CreateFrame("Button", nil, container, "BackdropTemplate")
-    keyBtn:SetPoint("LEFT", 90, y + 2)
+    local keyBtn = CreateFrame("Button", nil, quickBox, "BackdropTemplate")
+    keyBtn:SetPoint("TOPLEFT", 90, -46)
     keyBtn:SetSize(70, 20)
     keyBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1400,16 +1435,17 @@ local function BuildSendMessageTab(content, db)
         Advertiser:SetupKeybind()
     end)
     
-    local clearKeyBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
+    local clearKeyBtn = CreateFrame("Button", nil, quickBox, "UIPanelButtonTemplate")
     clearKeyBtn:SetPoint("LEFT", keyBtn, "RIGHT", 4, 0)
-    clearKeyBtn:SetSize(40, 20)
+    clearKeyBtn:SetSize(30, 20)
     clearKeyBtn:SetText("X")
     clearKeyBtn:SetScript("OnClick", function()
         getDB().keybindKey = nil
         keyText:SetText("|cff666666Click|r")
         Advertiser:SetupKeybind()
     end)
-    y = y - 30
+    
+    y = y - 78
     
     container:SetHeight(math.abs(y) + 10)
     content:SetHeight(math.abs(y) + 10)

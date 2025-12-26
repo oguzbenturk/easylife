@@ -45,6 +45,13 @@ local L_enUS = {
   -- AggroAlert
   AGGRO_TITLE = "Aggro Alert",
   
+  -- Module descriptions for module manager
+  ADS_DESC = "Auto-invite players, scheduled ads, auto-reply to whispers",
+  BOOST_DESC = "Track boosting clients, runs, and payments",
+  VENDOR_DESC = "Shows vendor value of looted items",
+  ICEBLOCK_DESC = "Shows optimal moment to cancel Ice Block",
+  AGGRO_DESC = "Big warning when mobs target you",
+  
   -- First-run popup
   FIRST_RUN_GOT_IT = "Got it!",
   FIRST_RUN_DONT_SHOW = "Don't show this again",
@@ -235,6 +242,13 @@ local L_trTR = {
   
   -- AggroAlert
   AGGRO_TITLE = "Aggro Uyarisi",
+  
+  -- Module descriptions for module manager
+  ADS_DESC = "Otomatik davet, zamanli reklamlar, otomatik cevaplama",
+  BOOST_DESC = "Boost musterilerini, kosu sayisini ve odemeleri takip et",
+  VENDOR_DESC = "Toplanan esyalarin satici degerini goster",
+  ICEBLOCK_DESC = "Ice Block'u iptal etmek icin optimal ani goster",
+  AGGRO_DESC = "Canavarlar sizi hedef aldiginda buyuk uyari",
   
   -- First-run popup
   FIRST_RUN_GOT_IT = "Anladim!",

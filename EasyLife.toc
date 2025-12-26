@@ -1,8 +1,8 @@
 ## Interface: 11508
-## Title: |cff00CED1EasyLife|r |cffffff00v1.2|r
+## Title: |cff00CED1EasyLife|r |cffffff00v1.3|r
 ## Notes: Performance-first modular helper addon (Classic Era Anniversary)
 ## Author: EasyLife
-## Version: 1.2.0
+## Version: 1.3.0
 ## SavedVariables: EasyLifeDB
 
 Core.lua

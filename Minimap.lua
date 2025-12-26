@@ -14,19 +14,49 @@ local function initDropdown(self, level)
   end
 end
 
+local function L(key)
+  return EasyLife and EasyLife.L and EasyLife:L(key) or key
+end
+
 local function buildMenu()
   local menu = {
-    { text = "EasyLife", isTitle = true, notCheckable = true },
-    {
-      text = EasyLife and EasyLife.L and EasyLife:L("CONFIG_TITLE") or "EasyLife Configuration",
-      notCheckable = true,
-      func = function()
-        if EasyLife_Config_Toggle then
-          EasyLife_Config_Toggle()
-        end
-      end,
-    },
+    { text = "|cff00CED1EasyLife|r", isTitle = true, notCheckable = true },
   }
+  
+  -- Add enabled modules
+  local moduleList = EasyLife_Config_GetModuleList and EasyLife_Config_GetModuleList() or {}
+  local hasEnabledModules = false
+  
+  for _, modInfo in ipairs(moduleList) do
+    if EasyLife_Config_IsModuleEnabled and EasyLife_Config_IsModuleEnabled(modInfo.name) then
+      hasEnabledModules = true
+      table.insert(menu, {
+        text = L(modInfo.key),
+        notCheckable = true,
+        func = function()
+          if EasyLife_Config_OpenModuleSettings then
+            EasyLife_Config_OpenModuleSettings(modInfo.name)
+          end
+        end,
+      })
+    end
+  end
+  
+  -- Separator if we have enabled modules
+  if hasEnabledModules then
+    table.insert(menu, { text = "", notCheckable = true, disabled = true })
+  end
+  
+  -- Always show configuration option
+  table.insert(menu, {
+    text = "|cffFFD700" .. L("CONFIG_TITLE") .. "|r",
+    notCheckable = true,
+    func = function()
+      if EasyLife_Config_Toggle then
+        EasyLife_Config_Toggle()
+      end
+    end,
+  })
 
   return menu
 end

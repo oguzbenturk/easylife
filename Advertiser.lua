@@ -934,9 +934,83 @@ end
 -- TAB: SEND MESSAGE
 --------------------------------------------------------------------------------
 
+local sendMessageStatusTimer = nil
+
 local function BuildSendMessageTab(content, db)
     local y = -12
     local W = 330
+    
+    -- Status Header (like main Advertiser header)
+    local statusBox = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    statusBox:SetPoint("TOPLEFT", 8, y)
+    statusBox:SetSize(W - 4, 50)
+    statusBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 10,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    statusBox:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    statusBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+    
+    local statusLabel = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusLabel:SetPoint("TOPLEFT", 10, -8)
+    statusLabel:SetText("|cffAAAAAABroadcast Status:|r")
+    
+    local statusText = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    statusText:SetPoint("TOPLEFT", statusLabel, "BOTTOMLEFT", 0, -4)
+    
+    local cooldownText = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cooldownText:SetPoint("TOPRIGHT", -10, -8)
+    
+    local adsSentText = statusBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    adsSentText:SetPoint("TOPRIGHT", cooldownText, "BOTTOMRIGHT", 0, -4)
+    
+    local function RefreshStatus()
+        local d = getDB()
+        local cd = Advertiser:GetCooldownRemaining()
+        
+        -- Main status
+        if not d.enabled then
+            statusText:SetText("|cffFF6666● Advertiser Stopped|r")
+            statusBox:SetBackdropBorderColor(0.4, 0.2, 0.2, 0.8)
+        elseif state.messageQueued then
+            statusText:SetText("|cff00FF00● MESSAGE READY - Click to Send!|r")
+            statusBox:SetBackdropBorderColor(0.2, 0.6, 0.2, 1)
+        elseif d.autoSendEnabled then
+            if state.onCooldown then
+                statusText:SetText("|cffFFD700● Auto-Send Active|r |cff888888(waiting)|r")
+                statusBox:SetBackdropBorderColor(0.5, 0.4, 0.1, 0.8)
+            else
+                statusText:SetText("|cff00FF00● Auto-Send Active|r")
+                statusBox:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
+            end
+        else
+            statusText:SetText("|cff888888● Manual Mode|r")
+            statusBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+        end
+        
+        -- Cooldown
+        if cd > 0 then
+            cooldownText:SetText("|cffFFD700Cooldown:|r " .. cd .. "s")
+        else
+            cooldownText:SetText("|cff00FF00Ready|r")
+        end
+        
+        -- Ads sent this session
+        adsSentText:SetText("|cff888888Sent:|r " .. state.adsSent)
+    end
+    
+    RefreshStatus()
+    
+    -- Update timer
+    if sendMessageStatusTimer then sendMessageStatusTimer:Cancel() end
+    sendMessageStatusTimer = C_Timer.NewTicker(0.5, RefreshStatus)
+    statusBox:SetScript("OnHide", function()
+        if sendMessageStatusTimer then sendMessageStatusTimer:Cancel(); sendMessageStatusTimer = nil end
+    end)
+    
+    y = y - 60
     
     -- Target channels
     local targetLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -1589,6 +1663,10 @@ function Advertiser:CleanupUI()
     if headerTimer then
         headerTimer:Cancel()
         headerTimer = nil
+    end
+    if sendMessageStatusTimer then
+        sendMessageStatusTimer:Cancel()
+        sendMessageStatusTimer = nil
     end
 end
 

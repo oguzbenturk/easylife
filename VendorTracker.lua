@@ -9,7 +9,7 @@ local LOOT_DEDUP_TIME = 0.5  -- Time window to consider same loot as duplicate (
 
 -- Defaults
 local DEFAULTS = {
-  enabled = false,
+  enabled = true,
   point = "TOPLEFT",
   relativePoint = "TOPLEFT",
   x = 100,

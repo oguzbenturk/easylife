@@ -72,7 +72,7 @@ local function ClearMessageQueue()
 end
 
 local DEFAULTS = {
-  enabled = false,
+  enabled = true,
   pricePerRun = 100000,   -- 10g default
   price3Runs = 270000,    -- 27g default (3-run pack)
   price5Runs = 400000,    -- 40g default (5-run pack)

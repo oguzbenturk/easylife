@@ -8,7 +8,7 @@ local UPDATE_INTERVAL = 0.1  -- Check every 100ms
 
 -- Defaults
 local DEFAULTS = {
-  enabled = false,
+  enabled = true,
   alertText = "AGGRO ON YOU!",
   fontSize = 48,
   fontColor = { r = 1, g = 0, b = 0 },  -- Red

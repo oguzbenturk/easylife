@@ -15,7 +15,7 @@ local nextAttackTime = 0
 
 -- Defaults
 local DEFAULTS = {
-  enabled = false,
+  enabled = true,
   x = 0,
   y = -200,
   width = 250,

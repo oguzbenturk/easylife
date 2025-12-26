@@ -10,7 +10,7 @@ local Advertiser = {}
 --------------------------------------------------------------------------------
 
 local DEFAULTS = {
-    enabled = false,  -- Module starts stopped
+    enabled = true,  -- Module enabled by default
     -- Auto Invite (starts disabled)
     autoInvite = false,
     autoInviteDelay = 0.5,

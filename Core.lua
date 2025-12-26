@@ -1,6 +1,6 @@
 -- EasyLife Core
 EasyLife = EasyLife or {}
-EasyLife.version = "1.0.2"
+EasyLife.version = "1.0.3"
 EasyLife.modules = EasyLife.modules or {}
 
 -- Defaults

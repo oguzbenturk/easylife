@@ -713,13 +713,22 @@ end
 --------------------------------------------------------------------------------
 
 function Advertiser:OnRegister()
-    local db = getDB()
-    -- Always disable all features on load - user must enable manually each session
-    -- This prevents accidental auto-invites/replies/sends when logging in
-    db.autoInvite = false
-    db.autoSendEnabled = false
-    db.autoReplyEnabled = false
-    self:UpdateState()
+    -- Register for PLAYER_LOGIN to reset features AFTER SavedVariables are loaded
+    -- OnRegister runs before SavedVariables load, so any resets here get overwritten
+    if not self.loginFrame then
+        self.loginFrame = CreateFrame("Frame")
+        self.loginFrame:RegisterEvent("PLAYER_LOGIN")
+        self.loginFrame:SetScript("OnEvent", function(_, event)
+            if event == "PLAYER_LOGIN" then
+                -- Now SavedVariables are fully loaded, reset all auto features
+                local db = getDB()
+                db.autoInvite = false
+                db.autoSendEnabled = false
+                db.autoReplyEnabled = false
+                Advertiser:UpdateState()
+            end
+        end)
+    end
 end
 
 --------------------------------------------------------------------------------

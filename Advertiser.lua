@@ -56,6 +56,7 @@ local autoSendTimer = nil
 local keybindFrame = nil
 local headerTimer = nil
 local pulseAnimation = nil
+local anyKeyFrame = nil  -- Frame to detect any key/click when message is queued
 
 --------------------------------------------------------------------------------
 -- DATABASE
@@ -370,6 +371,8 @@ function Advertiser:SendAd()
         -- Clear queued state
         state.messageQueued = false
         state.queuedAt = nil
+        -- Disable any-key detection until next queue
+        self:EnableAnyKeyDetection(false)
         self:StartCooldown()
         self:UpdateFloatingButton()
         EasyLife:Print("|cff00FF00Ad sent|r to " .. sent .. " channel(s)")
@@ -436,7 +439,7 @@ function Advertiser:StartAutoSend()
     end)
     
     EasyLife:Print("|cff00FF00[Auto-Send]|r Started - queues every " .. interval .. "s")
-    EasyLife:Print("|cffFFD700Click button or press keybind when ready to send!|r")
+    EasyLife:Print("|cffFFD700Press ANY key or click when message is ready!|r")
 end
 
 function Advertiser:StopAutoSend()
@@ -446,6 +449,8 @@ function Advertiser:StopAutoSend()
     end
     state.messageQueued = false
     state.queuedAt = nil
+    -- Disable any-key detection
+    self:EnableAnyKeyDetection(false)
     self:UpdateFloatingButton()
 end
 
@@ -469,10 +474,63 @@ function Advertiser:QueueAutoMessage()
     -- Update button to show queued state
     self:UpdateFloatingButton()
     
+    -- Enable any-key detection
+    self:EnableAnyKeyDetection(true)
+    
     -- Play sound to alert user
     PlaySound(SOUNDKIT.TELL_MESSAGE)
     
-    EasyLife:Print("|cffFFD700[Auto]|r Message ready - |cff00FF00click button|r or |cff00FF00press keybind|r to send!")
+    EasyLife:Print("|cffFFD700[Auto]|r Message ready - |cff00FF00press ANY key|r or |cff00FF00click|r to send!")
+end
+
+--------------------------------------------------------------------------------
+-- ANY KEY/CLICK DETECTION (for Auto-Send)
+-- When a message is queued, detect ANY hardware event to send it
+--------------------------------------------------------------------------------
+
+function Advertiser:EnableAnyKeyDetection(enable)
+    if not anyKeyFrame then
+        anyKeyFrame = CreateFrame("Button", nil, UIParent)
+        anyKeyFrame:SetSize(1, 1)
+        anyKeyFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+        anyKeyFrame:EnableKeyboard(true)
+        anyKeyFrame:SetPropagateKeyboardInput(true)
+        
+        -- Detect any key press
+        anyKeyFrame:SetScript("OnKeyDown", function(self, key)
+            -- Ignore modifier keys alone
+            if key == "LSHIFT" or key == "RSHIFT" or key == "LCTRL" or key == "RCTRL" or key == "LALT" or key == "RALT" then
+                return
+            end
+            
+            -- Check if we have a queued message
+            if state.messageQueued and getDB().enabled and getDB().autoSendEnabled then
+                self:SetPropagateKeyboardInput(false)
+                Advertiser:SendQueuedMessage()
+                C_Timer.After(0.1, function()
+                    if anyKeyFrame then
+                        anyKeyFrame:SetPropagateKeyboardInput(true)
+                    end
+                end)
+            end
+        end)
+        
+        -- Also detect mouse clicks via a global hook
+        anyKeyFrame:RegisterForClicks("AnyUp")
+        anyKeyFrame:SetScript("OnClick", function(self, button)
+            if state.messageQueued and getDB().enabled and getDB().autoSendEnabled then
+                Advertiser:SendQueuedMessage()
+            end
+        end)
+    end
+    
+    if enable then
+        anyKeyFrame:Show()
+        anyKeyFrame:EnableKeyboard(true)
+    else
+        anyKeyFrame:Hide()
+        anyKeyFrame:EnableKeyboard(false)
+    end
 end
 
 --------------------------------------------------------------------------------

@@ -221,21 +221,26 @@ end
 
 local function clearSettingsContent()
   if not moduleSettingsFrame or not moduleSettingsFrame.content then return end
+  
+  -- Hide and orphan all child frames
   for _, child in ipairs({moduleSettingsFrame.content:GetChildren()}) do
     child:Hide()
+    child:ClearAllPoints()
     child:SetParent(nil)
   end
+  
+  -- Clear all font strings and textures
   for _, region in ipairs({moduleSettingsFrame.content:GetRegions()}) do
-    if region:GetObjectType() == "FontString" then
-      region:SetText("")
-    end
+    region:Hide()
+    if region.SetText then region:SetText("") end
+    if region.SetTexture then region:SetTexture(nil) end
   end
 end
 
 function EasyLife_Config_OpenModuleSettings(moduleName)
   createSettingsFrame()
   
-  -- Cleanup previous module
+  -- Cleanup previous module UI first
   if currentModule then
     local prevMod = EasyLife:GetModule(currentModule)
     if prevMod and prevMod.CleanupUI then
@@ -243,8 +248,10 @@ function EasyLife_Config_OpenModuleSettings(moduleName)
     end
   end
   
-  currentModule = moduleName
+  -- If reopening same module, treat it as a fresh open
+  -- (force rebuild UI from scratch)
   clearSettingsContent()
+  currentModule = moduleName
   
   -- Find module info
   local modInfo

@@ -1584,6 +1584,14 @@ function Advertiser:BuildConfigUI(parent)
     SelectTab(1)
 end
 
+-- Cleanup when settings window is closed or module is switched
+function Advertiser:CleanupUI()
+    if headerTimer then
+        headerTimer:Cancel()
+        headerTimer = nil
+    end
+end
+
 --------------------------------------------------------------------------------
 -- REGISTER MODULE
 --------------------------------------------------------------------------------

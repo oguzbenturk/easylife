@@ -421,12 +421,15 @@ function Advertiser:StartAutoSend()
     
     local interval = math.max(10, db.autoSendInterval or 60)
     
-    -- Queue first message immediately (if not on cooldown)
+    -- Send first message IMMEDIATELY (not queued - direct send)
     if not state.onCooldown then
-        self:QueueAutoMessage()
+        EasyLife:Print("|cff00FF00[Auto-Send]|r Sending first message now...")
+        self:SendAd()
+    else
+        EasyLife:Print("|cffFFD700[Auto-Send]|r On cooldown, will queue when ready")
     end
     
-    -- Then queue on interval
+    -- Then queue subsequent messages on interval
     autoSendTimer = C_Timer.NewTicker(interval, function()
         if not getDB().autoSendEnabled or not getDB().enabled then
             if autoSendTimer then autoSendTimer:Cancel(); autoSendTimer = nil end
@@ -438,8 +441,7 @@ function Advertiser:StartAutoSend()
         end
     end)
     
-    EasyLife:Print("|cff00FF00[Auto-Send]|r Started - queues every " .. interval .. "s")
-    EasyLife:Print("|cffFFD700Press ANY key or click when message is ready!|r")
+    EasyLife:Print("|cff00FF00[Auto-Send]|r Started - will queue every " .. interval .. "s after cooldown")
 end
 
 function Advertiser:StopAutoSend()
@@ -486,7 +488,11 @@ end
 --------------------------------------------------------------------------------
 -- ANY KEY/CLICK DETECTION (for Auto-Send)
 -- When a message is queued, detect ANY hardware event to send it
+-- Uses debounce to handle multiple simultaneous inputs
 --------------------------------------------------------------------------------
+
+local anyKeyLastTrigger = 0
+local ANY_KEY_DEBOUNCE = 0.2  -- 200ms debounce to prevent double-sends
 
 function Advertiser:EnableAnyKeyDetection(enable)
     if not anyKeyFrame then
@@ -496,6 +502,19 @@ function Advertiser:EnableAnyKeyDetection(enable)
         anyKeyFrame:EnableKeyboard(true)
         anyKeyFrame:SetPropagateKeyboardInput(true)
         
+        -- Helper function to handle send with debounce
+        local function TrySendQueued()
+            local now = GetTime()
+            if now - anyKeyLastTrigger < ANY_KEY_DEBOUNCE then
+                return  -- Already sent recently, ignore duplicate input
+            end
+            
+            if state.messageQueued and getDB().enabled and getDB().autoSendEnabled then
+                anyKeyLastTrigger = now
+                Advertiser:SendQueuedMessage()
+            end
+        end
+        
         -- Detect any key press
         anyKeyFrame:SetScript("OnKeyDown", function(self, key)
             -- Ignore modifier keys alone
@@ -503,10 +522,10 @@ function Advertiser:EnableAnyKeyDetection(enable)
                 return
             end
             
-            -- Check if we have a queued message
+            -- Check if we have a queued message (with debounce)
             if state.messageQueued and getDB().enabled and getDB().autoSendEnabled then
                 self:SetPropagateKeyboardInput(false)
-                Advertiser:SendQueuedMessage()
+                TrySendQueued()
                 C_Timer.After(0.1, function()
                     if anyKeyFrame then
                         anyKeyFrame:SetPropagateKeyboardInput(true)
@@ -516,20 +535,35 @@ function Advertiser:EnableAnyKeyDetection(enable)
         end)
         
         -- Also detect mouse clicks via a global hook
-        anyKeyFrame:RegisterForClicks("AnyUp")
+        anyKeyFrame:RegisterForClicks("AnyUp", "AnyDown")
         anyKeyFrame:SetScript("OnClick", function(self, button)
-            if state.messageQueued and getDB().enabled and getDB().autoSendEnabled then
-                Advertiser:SendQueuedMessage()
-            end
+            TrySendQueued()
         end)
+        
+        -- Hook WorldFrame for clicks anywhere on screen
+        local worldClickFrame = CreateFrame("Button", nil, UIParent)
+        worldClickFrame:SetAllPoints(UIParent)
+        worldClickFrame:SetFrameStrata("BACKGROUND")
+        worldClickFrame:RegisterForClicks("AnyUp")
+        worldClickFrame:SetScript("OnClick", function(self, button)
+            TrySendQueued()
+        end)
+        worldClickFrame:EnableMouse(false)  -- Don't block clicks
+        anyKeyFrame.worldClickFrame = worldClickFrame
     end
     
     if enable then
         anyKeyFrame:Show()
         anyKeyFrame:EnableKeyboard(true)
+        if anyKeyFrame.worldClickFrame then
+            anyKeyFrame.worldClickFrame:EnableMouse(true)
+        end
     else
         anyKeyFrame:Hide()
         anyKeyFrame:EnableKeyboard(false)
+        if anyKeyFrame.worldClickFrame then
+            anyKeyFrame.worldClickFrame:EnableMouse(false)
+        end
     end
 end
 
@@ -1142,23 +1176,23 @@ local function BuildSendMessageTab(content, db)
             sendBtn:Enable()
             sendBtn:SetText("SEND!")
         elseif state.onCooldown then
-            statusText:SetText("|cffFFD700● On Cooldown|r")
+            statusText:SetText("|cffFFD700● Cooldown|r")
             header:SetBackdropBorderColor(0.5, 0.4, 0.1, 0.8)
             sendBtn:Disable()
             sendBtn:SetText("Wait")
         elseif d.autoSendEnabled then
-            statusText:SetText("|cff00FF00● Auto-Send ON|r")
+            statusText:SetText("|cff00FF00● Auto ON|r")
             header:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
             sendBtn:Enable()
             sendBtn:SetText("Send")
         else
-            statusText:SetText("|cff888888● Manual Mode|r")
+            statusText:SetText("|cff888888● Manual|r")
             header:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
             sendBtn:Enable()
             sendBtn:SetText("Send")
         end
         
-        cooldownText:SetText(cd > 0 and ("|cffFFD700CD:|r " .. cd .. "s") or "|cff00FF00Ready|r")
+        cooldownText:SetText(cd > 0 and ("|cffFFD700" .. cd .. "s|r") or "|cff00FF00Ready|r")
         statsText:SetText("|cff888888Sent:|r " .. state.adsSent)
     end
     
@@ -1169,46 +1203,29 @@ local function BuildSendMessageTab(content, db)
         if sendMessageStatusTimer then sendMessageStatusTimer:Cancel(); sendMessageStatusTimer = nil end
     end)
     
-    y = y - 65
+    y = y - 62
     
     -- ═══════════════════════════════════════════════════════════════════════
-    -- ENABLE AUTO-SEND
+    -- MESSAGE INPUT
     -- ═══════════════════════════════════════════════════════════════════════
-    local autoSendCb = CreateCheckbox(container, 4, y, "Enable Auto-Send", db.autoSendEnabled, function(self)
-        local d = getDB()
-        d.autoSendEnabled = self:GetChecked()
-        Advertiser:UpdateState()
-        RefreshHeader()
-        if d.autoSendEnabled then
-            EasyLife:Print("|cff00FF00[Auto-Send]|r Enabled - messages will queue and send on any key/click")
-        else
-            EasyLife:Print("|cffFF6600[Auto-Send]|r Disabled - manual mode")
-        end
-    end)
-    autoSendCb.text:SetTextColor(1, 0.82, 0)  -- Gold color for emphasis
-    y = y - 28
-    
-    -- ═══════════════════════════════════════════════════════════════════════
-    -- MESSAGE CONFIGURATION
-    -- ═══════════════════════════════════════════════════════════════════════
-    
-    -- Message
     local msgLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     msgLabel:SetPoint("TOPLEFT", 4, y)
-    msgLabel:SetText("Message:")
+    msgLabel:SetText("|cffFFD700Message:|r")
     y = y - 18
     
     local _, msgEdit = CreateEditBox(container, 4, y, W, 50, db.adMessage, true)
     msgEdit:SetScript("OnTextChanged", function(self)
         getDB().adMessage = self:GetText()
     end)
-    y = y - 58
+    y = y - 56
     
-    -- Target channels
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- CHANNEL SELECTION
+    -- ═══════════════════════════════════════════════════════════════════════
     local targetLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     targetLabel:SetPoint("TOPLEFT", 4, y)
-    targetLabel:SetText("Send to channels:")
-    y = y - 22
+    targetLabel:SetText("|cffFFD700Channels:|r")
+    y = y - 20
     
     local channels = GetJoinedChannels()
     if #channels == 0 then
@@ -1221,7 +1238,7 @@ local function BuildSendMessageTab(content, db)
         for _, ch in ipairs(channels) do
             if col >= 3 then
                 col, xPos = 0, 4
-                y = y - 26
+                y = y - 24
             end
             local cb = CreateCheckbox(container, xPos, y, ch.name, db.adTargetChannels[ch.name], function(self)
                 getDB().adTargetChannels[ch.name] = self:GetChecked()
@@ -1230,94 +1247,108 @@ local function BuildSendMessageTab(content, db)
             xPos = xPos + 110
             col = col + 1
         end
-        y = y - 32
+        y = y - 28
     end
     
-    -- Cooldown setting
-    local cdLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    cdLabel:SetPoint("TOPLEFT", 4, y)
-    cdLabel:SetText("Cooldown (sec):")
-    
-    local _, cdEdit = CreateNumberBox(container, 122, y - 2, 50, db.adCooldown)
-    cdEdit:SetScript("OnTextChanged", function(self)
-        getDB().adCooldown = math.max(1, tonumber(self:GetText()) or 30)
-    end)
-    y = y - 34
-    
     -- ═══════════════════════════════════════════════════════════════════════
-    -- AUTO-SEND SECTION
+    -- AUTO-SEND SETTINGS (Combined in one section)
     -- ═══════════════════════════════════════════════════════════════════════
     local sep1 = container:CreateTexture(nil, "ARTWORK")
     sep1:SetPoint("TOPLEFT", 4, y)
     sep1:SetSize(W, 1)
-    sep1:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    y = y - 12
+    sep1:SetColorTexture(0.4, 0.35, 0.2, 0.8)
+    y = y - 10
     
     local autoHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     autoHeader:SetPoint("TOPLEFT", 4, y)
-    autoHeader:SetText("|cffFFD700Auto-Send Timer|r")
-    y = y - 22
+    autoHeader:SetText("|cffFFD700Auto-Send Settings|r")
+    y = y - 20
     
-    CreateCheckbox(container, 4, y, "Enable auto-send", db.autoSendEnabled, function(cb)
+    -- Auto-send checkbox with description
+    local autoSendCb = CreateCheckbox(container, 4, y, "Enable Auto-Send", db.autoSendEnabled, function(self)
         local d = getDB()
-        d.autoSendEnabled = cb:GetChecked()
+        d.autoSendEnabled = self:GetChecked()
         if d.autoSendEnabled then
             Advertiser:StartAutoSend()
-            EasyLife:Print("|cff00FF00[Auto-Send]|r Enabled")
         else
             Advertiser:StopAutoSend()
-            EasyLife:Print("|cffFF6600[Auto-Send]|r Disabled")
         end
+        RefreshHeader()
     end)
+    autoSendCb.text:SetTextColor(1, 0.82, 0)
+    y = y - 20
     
+    local autoDesc = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    autoDesc:SetPoint("TOPLEFT", 24, y)
+    autoDesc:SetWidth(W - 30)
+    autoDesc:SetJustifyH("LEFT")
+    autoDesc:SetText("|cff888888Sends first message immediately, then queues.\nPress ANY key or click to send queued messages.|r")
+    y = y - 30
+    
+    -- Interval and Cooldown on same row
     local intLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    intLabel:SetPoint("LEFT", 172, y + 2)
+    intLabel:SetPoint("TOPLEFT", 4, y)
     intLabel:SetText("Interval:")
     
-    local _, intEdit = CreateNumberBox(container, 222, y, 50, db.autoSendInterval)
+    local _, intEdit = CreateNumberBox(container, 55, y - 2, 45, db.autoSendInterval)
     intEdit:SetScript("OnTextChanged", function(self)
         getDB().autoSendInterval = math.max(10, tonumber(self:GetText()) or 60)
     end)
     
-    local secLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    secLabel:SetPoint("LEFT", 277, y + 2)
-    secLabel:SetText("sec")
-    y = y - 28
+    local intSec = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    intSec:SetPoint("LEFT", 105, y)
+    intSec:SetText("sec")
+    
+    local cdLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    cdLabel:SetPoint("LEFT", 150, y)
+    cdLabel:SetText("Cooldown:")
+    
+    local _, cdEdit = CreateNumberBox(container, 210, y - 2, 45, db.adCooldown)
+    cdEdit:SetScript("OnTextChanged", function(self)
+        getDB().adCooldown = math.max(1, tonumber(self:GetText()) or 30)
+    end)
+    
+    local cdSec = container:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    cdSec:SetPoint("LEFT", 260, y)
+    cdSec:SetText("sec")
+    y = y - 30
     
     -- ═══════════════════════════════════════════════════════════════════════
-    -- FLOATING BUTTON & KEYBIND
+    -- QUICK ACCESS (Optional features)
     -- ═══════════════════════════════════════════════════════════════════════
     local sep2 = container:CreateTexture(nil, "ARTWORK")
     sep2:SetPoint("TOPLEFT", 4, y)
     sep2:SetSize(W, 1)
-    sep2:SetColorTexture(0.4, 0.4, 0.4, 0.5)
-    y = y - 12
+    sep2:SetColorTexture(0.4, 0.35, 0.2, 0.8)
+    y = y - 10
     
-    local floatHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    floatHeader:SetPoint("TOPLEFT", 4, y)
-    floatHeader:SetText("|cffFFD700Quick Access|r")
-    y = y - 22
+    local quickHeader = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    quickHeader:SetPoint("TOPLEFT", 4, y)
+    quickHeader:SetText("|cffFFD700Quick Access (Optional)|r")
+    y = y - 20
     
-    CreateCheckbox(container, 4, y, "Show floating button", db.useFloatingButton, function(cb)
+    -- Floating button row
+    CreateCheckbox(container, 4, y, "Floating button", db.useFloatingButton, function(cb)
         getDB().useFloatingButton = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
     
-    CreateCheckbox(container, 172, y, "Lock position", db.floatingButtonLocked, function(cb)
+    local lockCb = CreateCheckbox(container, 130, y, "Locked", db.floatingButtonLocked, function(cb)
         getDB().floatingButtonLocked = cb:GetChecked()
         Advertiser:UpdateFloatingButton()
     end)
-    y = y - 26
+    y = y - 24
     
-    CreateCheckbox(container, 4, y, "Enable keybind", db.keybindEnabled, function(cb)
+    -- Keybind row
+    CreateCheckbox(container, 4, y, "Keybind:", db.keybindEnabled, function(cb)
         getDB().keybindEnabled = cb:GetChecked()
         Advertiser:SetupKeybind()
     end)
     
     -- Keybind button
     local keyBtn = CreateFrame("Button", nil, container, "BackdropTemplate")
-    keyBtn:SetPoint("LEFT", 132, y + 2)
-    keyBtn:SetSize(80, 20)
+    keyBtn:SetPoint("LEFT", 90, y + 2)
+    keyBtn:SetSize(70, 20)
     keyBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1329,7 +1360,7 @@ local function BuildSendMessageTab(content, db)
     
     local keyText = keyBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     keyText:SetPoint("CENTER")
-    keyText:SetText(db.keybindKey or "|cff666666Set key|r")
+    keyText:SetText(db.keybindKey or "|cff666666Click|r")
     
     local capturing = false
     keyBtn:EnableKeyboard(false)
@@ -1349,16 +1380,16 @@ local function BuildSendMessageTab(content, db)
         
         if key == "ESCAPE" then
             capturing = false
-            keyText:SetText(db.keybindKey or "|cff666666Set key|r")
+            keyText:SetText(db.keybindKey or "|cff666666Click|r")
             self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
             self:EnableKeyboard(false)
             return
         end
         
         local combo = ""
-        if IsControlKeyDown() then combo = combo .. "CTRL-" end
-        if IsShiftKeyDown() then combo = combo .. "SHIFT-" end
-        if IsAltKeyDown() then combo = combo .. "ALT-" end
+        if IsControlKeyDown() then combo = combo .. "C-" end
+        if IsShiftKeyDown() then combo = combo .. "S-" end
+        if IsAltKeyDown() then combo = combo .. "A-" end
         combo = combo .. key
         
         getDB().keybindKey = combo
@@ -1372,16 +1403,16 @@ local function BuildSendMessageTab(content, db)
     local clearKeyBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
     clearKeyBtn:SetPoint("LEFT", keyBtn, "RIGHT", 4, 0)
     clearKeyBtn:SetSize(40, 20)
-    clearKeyBtn:SetText("Clear")
+    clearKeyBtn:SetText("X")
     clearKeyBtn:SetScript("OnClick", function()
         getDB().keybindKey = nil
-        keyText:SetText("|cff666666Set key|r")
+        keyText:SetText("|cff666666Click|r")
         Advertiser:SetupKeybind()
     end)
     y = y - 30
     
-    container:SetHeight(math.abs(y) + 20)
-    content:SetHeight(math.abs(y) + 20)
+    container:SetHeight(math.abs(y) + 10)
+    content:SetHeight(math.abs(y) + 10)
 end
 
 --------------------------------------------------------------------------------

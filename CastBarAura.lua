@@ -16,6 +16,74 @@ local DEFAULTS = {
   showIcon = true,
   playSound = true,
   soundFile = "Interface\\AddOns\\EasyLife\\Sounds\\cast_warning.ogg",
+  showAllHostileCasts = true,  -- Show ALL hostile casts (regardless of target)
+  onlyWatchedSpells = false,   -- Only show spells from the watchlist
+  watchedSpells = {},  -- User can add custom spell IDs
+}
+
+-- Dangerous spells to always show (Dire Maul and common dungeon spells)
+-- Format: [spellId] = castTime (in seconds), 0 = use default
+local DANGEROUS_SPELLS = {
+  -- Dire Maul East
+  [22478] = 2.0,   -- Zevrim Thornhoof - Intense Pain
+  [22651] = 1.5,   -- Zevrim Thornhoof - Sacrifice
+  [17228] = 2.0,   -- Shadow Bolt Volley (multiple mobs)
+  [22661] = 3.0,   -- Alzzin - Enervate
+  [22662] = 2.0,   -- Alzzin - Wither
+  [22415] = 2.0,   -- Alzzin - Entangling Roots
+  -- Dire Maul West  
+  [22950] = 2.0,   -- Immol'thar - Portal of Immol'thar
+  [22899] = 0,     -- Immol'thar - Eye of Immol'thar
+  [7645] = 3.0,    -- Magister Kalendris - Dominate Mind
+  [22995] = 2.0,   -- Prince Tortheldrin - Summon
+  -- Dire Maul North
+  [22886] = 0,     -- King Gordok - Berserker Charge
+  [16740] = 0,     -- War Stomp (multiple mobs)
+  [22833] = 2.0,   -- Stomper Kreeg - Booze Spit
+  [15578] = 0,     -- Whirlwind
+  -- Common dangerous spells
+  [5138] = 3.0,    -- Drain Mana
+  [11668] = 3.0,   -- Frostbolt (high rank)
+  [12466] = 3.5,   -- Fireball (high rank)
+  [15232] = 3.0,   -- Shadow Bolt (high rank)
+  [16568] = 3.0,   -- Mind Flay
+  [14515] = 1.5,   -- Dominate Mind
+  [20604] = 1.5,   -- Dominate Mind
+  [12098] = 1.5,   -- Sleep
+  [15970] = 1.5,   -- Sleep (rank 2)
+  [8988] = 0,      -- Silence
+  [15487] = 0,     -- Silence
+  [17165] = 1.5,   -- Mind Blast
+  [6713] = 0,      -- Disarm
+  [15708] = 0,     -- Mortal Strike
+  [16856] = 0,     -- Mortal Strike (rank 2)
+  [11978] = 0,     -- Kick
+  [11972] = 0,     -- Shield Bash
+  [15655] = 0,     -- Shield Slam
+  [8269] = 0,      -- Frenzy
+  [8599] = 0,      -- Enrage
+  [12795] = 0,     -- Frenzy (rank 2)
+  [28747] = 0,     -- Frenzy (rank 3)
+  [11876] = 0.5,   -- War Stomp
+  [15593] = 0,     -- Stun
+  [11428] = 0,     -- Knockdown
+  [15618] = 0,     -- Snap Kick
+  -- Scholomance
+  [17405] = 3.0,   -- Dominate Mind
+  [12889] = 2.5,   -- Curse of Tongues
+  [18671] = 3.5,   -- Curse of Agony
+  [15471] = 2.0,   -- Counterspell - Silence
+  -- Stratholme
+  [16798] = 3.0,   -- Enchanting Lullaby
+  [17405] = 3.0,   -- Dominate Mind
+  [16869] = 2.0,   -- Ice Tomb
+  [17620] = 3.0,   -- Drain Life
+  -- UBRS/LBRS
+  [16727] = 0.5,   -- War Stomp
+  [15654] = 2.0,   -- Shadow Word: Pain
+  [22667] = 2.0,   -- Shadow Word: Pain
+  [15587] = 3.0,   -- Mind Blast
+  [17194] = 3.0,   -- Mind Blast
 }
 
 local function ensureDB()
@@ -163,12 +231,6 @@ local function CreateCastBar(casterGUID, spellName, spellIcon, castTime, startTi
     
     self.progress:SetValue(now - self.startTime)
     self.timer:SetText(string.format("%.1f", remaining))
-    
-    -- Flash when almost done
-    if remaining < 1 then
-      local alpha = 0.5 + 0.5 * math.sin(now * 10)
-      self:SetAlpha(alpha)
-    end
   end)
   
   bar:Show()
@@ -224,26 +286,62 @@ local function IsHostileNPC(flags)
   return isNPC and isHostile
 end
 
--- Helper: Find unit from GUID to check if targeting player
-local function FindUnitFromGUID(guid)
-  -- Check nameplates
+-- Helper: Try to find unit from GUID (best effort - may return nil for distant mobs)
+local function TryFindUnitFromGUID(guid)
+  -- Check target first (most common case - player targeting the caster)
+  if UnitExists("target") and UnitGUID("target") == guid then
+    return "target"
+  end
+  -- Check focus
+  if UnitExists("focus") and UnitGUID("focus") == guid then
+    return "focus"
+  end
+  -- Check boss frames (for dungeon/raid bosses)
+  for i = 1, 5 do
+    local unit = "boss" .. i
+    if UnitExists(unit) and UnitGUID(unit) == guid then
+      return unit
+    end
+  end
+  -- Check nameplates (limited range ~20-40 yards)
   for i = 1, 40 do
     local unit = "nameplate" .. i
     if UnitExists(unit) and UnitGUID(unit) == guid then
       return unit
     end
   end
-  -- Check target/focus
-  if UnitExists("target") and UnitGUID("target") == guid then
-    return "target"
-  end
-  if UnitExists("focus") and UnitGUID("focus") == guid then
-    return "focus"
-  end
   return nil
 end
 
--- Helper: Check if a unit is targeting the player
+-- Helper: Get cast time - from spell table, unit, or default
+local function GetCastTime(spellId, unit)
+  -- First check our spell database
+  local knownCastTime = DANGEROUS_SPELLS[spellId]
+  if knownCastTime and knownCastTime > 0 then
+    return knownCastTime
+  end
+  
+  -- Try to get from unit if available
+  if unit and UnitExists(unit) then
+    local _, _, _, startTimeMs, endTimeMs = UnitCastingInfo(unit)
+    if endTimeMs and startTimeMs then
+      return (endTimeMs - startTimeMs) / 1000
+    end
+  end
+  
+  -- Default fallback
+  return 2.5
+end
+
+-- Helper: Check if a spell is on our watchlist
+local function IsWatchedSpell(spellId)
+  if DANGEROUS_SPELLS[spellId] ~= nil then return true end
+  local db = getDB()
+  if db.watchedSpells and db.watchedSpells[spellId] then return true end
+  return false
+end
+
+-- Helper: Check if unit is targeting player (best effort)
 local function IsUnitTargetingPlayer(unit)
   if not unit or not UnitExists(unit) then return false end
   local targetUnit = unit .. "target"
@@ -260,33 +358,42 @@ local function OnCombatLogEvent()
   local timestamp, subevent, _, sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
         destGUID, destName, destFlags, destRaidFlags = CombatLogGetCurrentEventInfo()
   
-  local playerGUID = UnitGUID("player")
-  
-  -- SPELL_CAST_START: destGUID is empty for cast starts!
-  -- We need to check if the hostile caster is targeting us
   if subevent == "SPELL_CAST_START" then
     -- Only track hostile NPCs
     if not IsHostileNPC(sourceFlags) then return end
     
     local spellId, spellName = select(12, CombatLogGetCurrentEventInfo())
-    local spellIcon = GetSpellTexture(spellId)
     
-    -- Find the unit casting and check if they're targeting us
-    local casterUnit = FindUnitFromGUID(sourceGUID)
-    if not casterUnit then return end
-    
-    -- Check if the caster is targeting the player
-    if not IsUnitTargetingPlayer(casterUnit) then return end
-    
-    -- Get cast time from UnitCastingInfo
-    local castTime = 3  -- Default fallback
-    local name, _, _, startTimeMs, endTimeMs = UnitCastingInfo(casterUnit)
-    if endTimeMs and startTimeMs then
-      castTime = (endTimeMs - startTimeMs) / 1000
+    -- Get spell info - combat log name may be nil in Classic Era
+    -- Use GetSpellInfo as fallback for both name and icon
+    local spellInfoName, _, spellInfoIcon = GetSpellInfo(spellId)
+    if not spellName or spellName == "" then
+      spellName = spellInfoName or ("Spell " .. tostring(spellId))
     end
+    local spellIcon = spellInfoIcon or GetSpellTexture(spellId)
+    
+    -- Check if this is a watched dangerous spell
+    local isWatched = IsWatchedSpell(spellId)
+    
+    -- Decide whether to show this cast:
+    -- If onlyWatchedSpells is true, ONLY show watched spells
+    -- If showAllHostileCasts is true, show ALL hostile casts
+    -- Otherwise, only show watched spells
+    if db.onlyWatchedSpells then
+      if not isWatched then return end
+    elseif not db.showAllHostileCasts then
+      if not isWatched then return end
+    end
+    -- If showAllHostileCasts is true and onlyWatchedSpells is false, show everything
+    
+    -- Try to find the unit (may fail for distant mobs - that's OK for cast time)
+    local casterUnit = TryFindUnitFromGUID(sourceGUID)
+    
+    -- Get cast time from our database or the unit
+    local castTime = GetCastTime(spellId, casterUnit)
     
     -- Only show casts with meaningful cast time (ignore instant casts)
-    if castTime < 0.5 then return end
+    if castTime < 0.3 then return end
     
     CreateCastBar(sourceGUID, spellName, spellIcon, castTime, GetTime())
     
@@ -300,62 +407,17 @@ local function OnCombatLogEvent()
   end
 end
 
--- Alternative detection: UNIT_SPELLCAST_START fires with unit argument
-local function OnUnitSpellCastStart(unit)
-  local db = getDB()
-  if not db.enabled then return end
-  
-  -- Only track hostile units (nameplates)
-  if not unit or not string.find(unit, "nameplate") then return end
-  if not UnitExists(unit) then return end
-  
-  -- Check if hostile
-  if not UnitIsEnemy("player", unit) then return end
-  
-  -- Check if targeting player
-  if not IsUnitTargetingPlayer(unit) then return end
-  
-  -- Get cast info
-  local name, _, texture, startTimeMs, endTimeMs, _, _, _, spellId = UnitCastingInfo(unit)
-  if not name or not endTimeMs then return end
-  
-  local castTime = (endTimeMs - startTimeMs) / 1000
-  if castTime < 0.5 then return end  -- Skip very short casts
-  
-  local casterGUID = UnitGUID(unit)
-  if not casterGUID then return end
-  
-  CreateCastBar(casterGUID, name, texture, castTime, GetTime())
-end
-
 function CastBarAura:Enable()
   if not eventFrame then
     eventFrame = CreateFrame("Frame")
   end
   
-  -- Combat log for tracking cast ends
+  -- Combat log is the primary detection method
   eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
   
-  -- UNIT_SPELLCAST_START for better detection of enemy casts
-  eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
-  eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
-  eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-  eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
-  
-  eventFrame:SetScript("OnEvent", function(_, event, arg1)
+  eventFrame:SetScript("OnEvent", function(_, event)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
       OnCombatLogEvent()
-    elseif event == "UNIT_SPELLCAST_START" then
-      OnUnitSpellCastStart(arg1)
-    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_INTERRUPTED" 
-        or event == "UNIT_SPELLCAST_FAILED" then
-      -- Remove cast bar when cast ends
-      if arg1 and UnitExists(arg1) then
-        local guid = UnitGUID(arg1)
-        if guid and activeCasts[guid] then
-          CastBarAura:RemoveCast(guid)
-        end
-      end
     end
   end)
   
@@ -398,6 +460,84 @@ function CastBarAura:BuildConfigUI(parent)
   
   local yOffset = -10
   
+  -- Important note at top
+  local noteText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  noteText:SetPoint("TOPLEFT", 10, yOffset)
+  noteText:SetWidth(340)
+  noteText:SetJustifyH("LEFT")
+  noteText:SetText("|cffFFFF00Note:|r Enable |cff00FF00Advanced Combat Logging|r in WoW Settings |cffAAAAAA(Esc > Options > Network)|r")
+  yOffset = yOffset - 28
+  
+  -- ===== RIGHT SIDE: BAR APPEARANCE (compact) =====
+  local rightX = 250
+  local rightY = -38
+  
+  local appearanceHeader = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  appearanceHeader:SetPoint("TOPLEFT", rightX, rightY)
+  appearanceHeader:SetText("|cffFFD700Bar Appearance|r")
+  rightY = rightY - 16
+  
+  -- Bar width slider (compact)
+  local widthLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  widthLabel:SetPoint("TOPLEFT", rightX, rightY)
+  widthLabel:SetText("Width: " .. db.barWidth)
+  rightY = rightY - 14
+  
+  local widthSlider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+  widthSlider:SetPoint("TOPLEFT", rightX, rightY)
+  widthSlider:SetWidth(110)
+  widthSlider:SetHeight(14)
+  widthSlider:SetMinMaxValues(150, 400)
+  widthSlider:SetValueStep(10)
+  widthSlider:SetObeyStepOnDrag(true)
+  widthSlider:SetValue(db.barWidth)
+  widthSlider.Low:SetText("150")
+  widthSlider.High:SetText("400")
+  widthSlider.Low:SetFontObject("GameFontNormalSmall")
+  widthSlider.High:SetFontObject("GameFontNormalSmall")
+  widthSlider:SetScript("OnValueChanged", function(self, value)
+    db.barWidth = math.floor(value)
+    widthLabel:SetText("Width: " .. db.barWidth)
+  end)
+  rightY = rightY - 28
+  
+  -- Bar height slider (compact)
+  local heightLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  heightLabel:SetPoint("TOPLEFT", rightX, rightY)
+  heightLabel:SetText("Height: " .. db.barHeight)
+  rightY = rightY - 14
+  
+  local heightSlider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+  heightSlider:SetPoint("TOPLEFT", rightX, rightY)
+  heightSlider:SetWidth(110)
+  heightSlider:SetHeight(14)
+  heightSlider:SetMinMaxValues(15, 50)
+  heightSlider:SetValueStep(1)
+  heightSlider:SetObeyStepOnDrag(true)
+  heightSlider:SetValue(db.barHeight)
+  heightSlider.Low:SetText("15")
+  heightSlider.High:SetText("50")
+  heightSlider.Low:SetFontObject("GameFontNormalSmall")
+  heightSlider.High:SetFontObject("GameFontNormalSmall")
+  heightSlider:SetScript("OnValueChanged", function(self, value)
+    db.barHeight = math.floor(value)
+    heightLabel:SetText("Height: " .. db.barHeight)
+  end)
+  rightY = rightY - 28
+  
+  -- Test button (compact)
+  local testBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+  testBtn:SetPoint("TOPLEFT", rightX, rightY)
+  testBtn:SetSize(110, 18)
+  testBtn:SetText("Test Cast")
+  testBtn:GetFontString():SetFont(testBtn:GetFontString():GetFont(), 10)
+  testBtn:SetScript("OnClick", function()
+    if db.enabled then
+      CreateCastBar("Test-0-000-000-00000001", "Test Spell", "Interface\\Icons\\Spell_Shadow_ShadowBolt", 3, GetTime())
+    end
+  end)
+  
+  -- ===== LEFT SIDE: CHECKBOXES =====
   -- Enable checkbox
   local enableCB = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
   enableCB:SetPoint("TOPLEFT", 10, yOffset)
@@ -407,7 +547,7 @@ function CastBarAura:BuildConfigUI(parent)
     db.enabled = self:GetChecked()
     CastBarAura:UpdateState()
   end)
-  yOffset = yOffset - 30
+  yOffset = yOffset - 26
   
   -- Show icon checkbox
   local iconCB = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
@@ -417,7 +557,7 @@ function CastBarAura:BuildConfigUI(parent)
   iconCB:SetScript("OnClick", function(self)
     db.showIcon = self:GetChecked()
   end)
-  yOffset = yOffset - 30
+  yOffset = yOffset - 26
   
   -- Play sound checkbox
   local soundCB = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
@@ -427,7 +567,17 @@ function CastBarAura:BuildConfigUI(parent)
   soundCB:SetScript("OnClick", function(self)
     db.playSound = self:GetChecked()
   end)
-  yOffset = yOffset - 30
+  yOffset = yOffset - 26
+  
+  -- Show all hostile casts checkbox
+  local hostileCB = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
+  hostileCB:SetPoint("TOPLEFT", 10, yOffset)
+  hostileCB.Text:SetText(L("CAST_SHOW_ALL_HOSTILE") or "Show ALL Hostile Casts")
+  hostileCB:SetChecked(db.showAllHostileCasts)
+  hostileCB:SetScript("OnClick", function(self)
+    db.showAllHostileCasts = self:GetChecked()
+  end)
+  yOffset = yOffset - 26
   
   -- Lock position checkbox
   local lockCB = CreateFrame("CheckButton", nil, parent, "ChatConfigCheckButtonTemplate")
@@ -436,54 +586,6 @@ function CastBarAura:BuildConfigUI(parent)
   lockCB:SetChecked(db.locked)
   lockCB:SetScript("OnClick", function(self)
     db.locked = self:GetChecked()
-  end)
-  yOffset = yOffset - 30
-  
-  -- Bar width slider
-  local widthLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  widthLabel:SetPoint("TOPLEFT", 10, yOffset)
-  widthLabel:SetText((L("CAST_BAR_WIDTH") or "Bar Width") .. ": " .. db.barWidth)
-  yOffset = yOffset - 20
-  
-  local widthSlider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
-  widthSlider:SetPoint("TOPLEFT", 15, yOffset)
-  widthSlider:SetWidth(200)
-  widthSlider:SetMinMaxValues(150, 400)
-  widthSlider:SetValueStep(10)
-  widthSlider:SetObeyStepOnDrag(true)
-  widthSlider:SetValue(db.barWidth)
-  widthSlider.Low:SetText("150")
-  widthSlider.High:SetText("400")
-  widthSlider:SetScript("OnValueChanged", function(self, value)
-    db.barWidth = math.floor(value)
-    widthLabel:SetText((L("CAST_BAR_WIDTH") or "Bar Width") .. ": " .. db.barWidth)
-  end)
-  yOffset = yOffset - 40
-  
-  -- Reset position button
-  local resetBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-  resetBtn:SetPoint("TOPLEFT", 10, yOffset)
-  resetBtn:SetSize(120, 24)
-  resetBtn:SetText(L("CAST_RESET") or "Reset Position")
-  resetBtn:SetScript("OnClick", function()
-    db.x = DEFAULTS.x
-    db.y = DEFAULTS.y
-    if displayFrame then
-      displayFrame:ClearAllPoints()
-      displayFrame:SetPoint("CENTER", UIParent, "CENTER", db.x, db.y)
-    end
-  end)
-  yOffset = yOffset - 40
-  
-  -- Test button
-  local testBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-  testBtn:SetPoint("TOPLEFT", 140, yOffset + 40)
-  testBtn:SetSize(100, 24)
-  testBtn:SetText(L("CAST_TEST") or "Test Cast")
-  testBtn:SetScript("OnClick", function()
-    if db.enabled then
-      CreateCastBar("Test-0-000-000-00000001", "Test Spell", "Interface\\Icons\\Spell_Shadow_ShadowBolt", 3, GetTime())
-    end
   end)
 end
 

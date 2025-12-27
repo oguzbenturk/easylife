@@ -329,6 +329,7 @@ local function createSettingsFrame()
   moduleSettingsFrame:SetFrameLevel(50)
   moduleSettingsFrame:SetMovable(true)
   moduleSettingsFrame:EnableMouse(true)
+  moduleSettingsFrame:EnableKeyboard(false)  -- Don't capture keyboard - allow walking
   moduleSettingsFrame:RegisterForDrag("LeftButton")
   moduleSettingsFrame:SetScript("OnDragStart", moduleSettingsFrame.StartMoving)
   moduleSettingsFrame:SetScript("OnDragStop", moduleSettingsFrame.StopMovingOrSizing)
@@ -354,6 +355,7 @@ local function createSettingsFrame()
   moduleSettingsFrame.content = CreateFrame("Frame", nil, moduleSettingsFrame)
   moduleSettingsFrame.content:SetPoint("TOPLEFT", 14, -40)
   moduleSettingsFrame.content:SetPoint("BOTTOMRIGHT", -14, 14)
+  moduleSettingsFrame.content:EnableKeyboard(false)  -- Don't capture keyboard
   
   moduleSettingsFrame:Hide()
   tinsert(UISpecialFrames, "EasyLifeModuleSettingsFrame")

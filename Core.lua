@@ -1,6 +1,6 @@
 -- EasyLife Core
 EasyLife = EasyLife or {}
-EasyLife.version = "1.0.3"
+EasyLife.version = "1.1.0"
 EasyLife.modules = EasyLife.modules or {}
 
 -- Defaults
@@ -115,7 +115,8 @@ local function createFirstRunPopup()
   local popup = CreateFrame("Frame", "EasyLifeFirstRunPopup", UIParent, "BackdropTemplate")
   popup:SetSize(450, 350)
   popup:SetPoint("CENTER")
-  popup:SetFrameStrata("FULLSCREEN_DIALOG")
+  popup:SetFrameStrata("TOOLTIP")  -- Highest strata
+  popup:SetFrameLevel(500)  -- Very high level within strata
   popup:SetMovable(true)
   popup:EnableMouse(true)
   popup:RegisterForDrag("LeftButton")
@@ -124,12 +125,12 @@ local function createFirstRunPopup()
   popup:SetClampedToScreen(true)
   
   popup:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 11, right = 12, top = 12, bottom = 11 },
   })
-  popup:SetBackdropColor(0.08, 0.06, 0.03, 0.98)
+  popup:SetBackdropColor(0, 0, 0, 1)  -- 100% solid black, no transparency
   
   -- Title bar
   local titleBar = CreateFrame("Frame", nil, popup, "BackdropTemplate")

@@ -2,7 +2,8 @@
 local VendorTracker = {}
 local totalValue = 0
 local sessionValue = 0
-local sessionItems = {}  -- Track items in current session
+local sessionItems = {}  -- Track items in current session: { [itemId] = {name, value, count, link} }
+local sessionItemOrder = {}  -- Track order of items for display
 local displayFrame
 local recentLoot = {}  -- Track recent loot to prevent duplicate counting
 local LOOT_DEDUP_TIME = 0.5  -- Time window to consider same loot as duplicate (seconds)
@@ -73,7 +74,7 @@ local function createDisplayFrame()
   local db = getDB()
   
   local frame = CreateFrame("Frame", "EasyLifeVendorTrackerFrame", UIParent, "BackdropTemplate")
-  frame:SetSize(220, 60)
+  frame:SetSize(220, 70)  -- Increased height for reset button
   frame:SetPoint(db.point or "TOPLEFT", UIParent, db.relativePoint or db.point or "TOPLEFT", db.x, db.y)
   frame:SetFrameStrata("MEDIUM")
   frame:SetMovable(true)
@@ -92,6 +93,30 @@ local function createDisplayFrame()
   frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   frame.title:SetPoint("TOP", 0, -8)
   frame.title:SetText("|cff33ff99Vendor Value|r")
+  
+  -- Reset button (small X button)
+  frame.resetBtn = CreateFrame("Button", nil, frame)
+  frame.resetBtn:SetSize(16, 16)
+  frame.resetBtn:SetPoint("TOPRIGHT", -4, -4)
+  frame.resetBtn:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+  frame.resetBtn:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
+  frame.resetBtn:SetPushedTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Down")
+  frame.resetBtn:SetScript("OnClick", function()
+    sessionValue = 0
+    sessionItems = {}
+    sessionItemOrder = {}
+    VendorTracker:UpdateDisplay()
+    EasyLife:Print("Session reset!", "VendorTracker")
+  end)
+  frame.resetBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:AddLine("Reset Session", 1, 1, 1)
+    GameTooltip:AddLine("Click to reset current session value", 0.7, 0.7, 0.7)
+    GameTooltip:Show()
+  end)
+  frame.resetBtn:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
   
   -- Session value
   frame.sessionLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -130,22 +155,15 @@ local function createDisplayFrame()
     currentDB.y = y
   end)
   
-  -- Mouse behavior: left-drag to move; right-click toggles lock; Shift-Right resets session
+  -- Mouse behavior: left-drag to move; Shift+Click resets session
   frame:SetScript("OnMouseUp", function(self, button)
-    if button == "RightButton" and IsShiftKeyDown() then
+    if button == "LeftButton" and IsShiftKeyDown() then
       sessionValue = 0
       sessionItems = {}
+      sessionItemOrder = {}
       VendorTracker:UpdateDisplay()
+      EasyLife:Print("Session reset!", "VendorTracker")
       return
-    end
-    if button == "RightButton" then
-      local d = getDB()
-      d.locked = not d.locked
-      local point, relativeTo, relativePoint, x, y = self:GetPoint()
-      d.point = point
-      d.relativePoint = relativePoint
-      d.x = x
-      d.y = y
     end
   end)
   
@@ -155,20 +173,27 @@ local function createDisplayFrame()
     GameTooltip:AddLine("|cff33ff99Vendor Tracker|r", 1, 1, 1)
     GameTooltip:AddLine(" ")
     
-    -- Show session items
-    if #sessionItems > 0 then
+    -- Show session items (now grouped by item)
+    if #sessionItemOrder > 0 then
       GameTooltip:AddLine("|cffFFFF00Session Items:|r", 1, 1, 1)
-      local maxShow = 15  -- Show last 15 items
-      local startIdx = math.max(1, #sessionItems - maxShow + 1)
+      local maxShow = 15  -- Show last 15 unique items
+      local startIdx = math.max(1, #sessionItemOrder - maxShow + 1)
       
-      for i = startIdx, #sessionItems do
-        local item = sessionItems[i]
-        local moneyStr = formatMoney(item.value)
-        GameTooltip:AddDoubleLine(item.name, moneyStr, 1, 1, 1, 1, 1, 1)
+      for i = startIdx, #sessionItemOrder do
+        local itemId = sessionItemOrder[i]
+        local item = sessionItems[itemId]
+        if item then
+          local displayName = item.name
+          if item.count > 1 then
+            displayName = item.name .. " |cff888888x" .. item.count .. "|r"
+          end
+          local moneyStr = formatMoney(item.totalValue)
+          GameTooltip:AddDoubleLine(displayName, moneyStr, 1, 1, 1, 1, 1, 1)
+        end
       end
       
-      if #sessionItems > maxShow then
-        GameTooltip:AddLine("|cff888888... and " .. (#sessionItems - maxShow) .. " more items|r", 0.5, 0.5, 0.5)
+      if #sessionItemOrder > maxShow then
+        GameTooltip:AddLine("|cff888888... and " .. (#sessionItemOrder - maxShow) .. " more items|r", 0.5, 0.5, 0.5)
       end
       GameTooltip:AddLine(" ")
     else
@@ -177,7 +202,7 @@ local function createDisplayFrame()
     end
     
     GameTooltip:AddLine("|cffFFFFFFDrag:|r Move frame", 0.7, 0.7, 0.7)
-    GameTooltip:AddLine("|cffFFFFFFRight-click:|r Reset session", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine("|cffFFFFFFShift+Click:|r Reset session", 0.7, 0.7, 0.7)
     GameTooltip:Show()
   end)
   frame:SetScript("OnLeave", function()
@@ -290,12 +315,24 @@ local function onLootReceived(_, message)
     sessionValue = sessionValue + vendorPrice
     totalValue = totalValue + vendorPrice
     
-    -- Track the item
-    table.insert(sessionItems, {
-      name = itemName or "Unknown Item",
-      value = vendorPrice,
-      link = itemLink
-    })
+    -- Track the item - group by itemId
+    local numItemID = tonumber(itemID)
+    if sessionItems[numItemID] then
+      -- Item already exists, increment count and add value
+      sessionItems[numItemID].count = sessionItems[numItemID].count + 1
+      sessionItems[numItemID].totalValue = sessionItems[numItemID].totalValue + vendorPrice
+    else
+      -- New item
+      sessionItems[numItemID] = {
+        name = itemName or "Unknown Item",
+        value = vendorPrice,  -- Value per item
+        totalValue = vendorPrice,
+        count = 1,
+        link = itemLink
+      }
+      -- Track order for display
+      table.insert(sessionItemOrder, numItemID)
+    end
     
     VendorTracker:UpdateDisplay()
   end
@@ -308,6 +345,7 @@ local function onZoneChanged()
     -- Reset session value when entering instance
     sessionValue = 0
     sessionItems = {}
+    sessionItemOrder = {}
     VendorTracker:UpdateDisplay()
   end
 end
@@ -374,6 +412,7 @@ function VendorTracker:BuildConfigUI(parent)
   resetSessionBtn:SetText("Reset Session")
   resetSessionBtn:SetScript("OnClick", function()
     sessionItems = {}
+    sessionItemOrder = {}
     sessionValue = 0
     VendorTracker:UpdateDisplay()
   end)

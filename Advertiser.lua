@@ -880,15 +880,45 @@ local function CreateEditBox(parent, x, y, width, height, text, multiLine)
     })
     bg:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
     bg:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    bg:SetClipsChildren(true)  -- Clip any overflow
     
-    local edit = CreateFrame("EditBox", nil, bg)
-    edit:SetPoint("TOPLEFT", 6, -4)
-    edit:SetPoint("BOTTOMRIGHT", -6, 4)
-    edit:SetFontObject("ChatFontNormal")
-    edit:SetAutoFocus(false)
-    edit:SetMultiLine(multiLine or false)
-    edit:SetText(text or "")
-    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    local edit
+    if multiLine then
+        -- Use ScrollFrame to contain multiline text properly
+        local scrollFrame = CreateFrame("ScrollFrame", nil, bg, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 4, -4)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -22, 4)
+        
+        edit = CreateFrame("EditBox", nil, scrollFrame)
+        edit:SetWidth(scrollFrame:GetWidth() > 0 and scrollFrame:GetWidth() - 4 or width - 30)
+        edit:SetFontObject("ChatFontNormal")
+        edit:SetAutoFocus(false)
+        edit:SetMultiLine(true)
+        edit:SetText(text or "")
+        edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        scrollFrame:SetScrollChild(edit)
+        
+        -- Auto-scroll to cursor when typing
+        edit:SetScript("OnCursorChanged", function(self, _, cy, _, cursorHeight)
+            local offset = scrollFrame:GetVerticalScroll()
+            local frameHeight = scrollFrame:GetHeight()
+            cy = -cy  -- Convert to positive
+            if cy < offset then
+                scrollFrame:SetVerticalScroll(cy)
+            elseif cy + cursorHeight > offset + frameHeight then
+                scrollFrame:SetVerticalScroll(cy + cursorHeight - frameHeight)
+            end
+        end)
+    else
+        edit = CreateFrame("EditBox", nil, bg)
+        edit:SetPoint("TOPLEFT", 6, -4)
+        edit:SetPoint("BOTTOMRIGHT", -6, 4)
+        edit:SetFontObject("ChatFontNormal")
+        edit:SetAutoFocus(false)
+        edit:SetMultiLine(false)
+        edit:SetText(text or "")
+        edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    end
     
     return bg, edit
 end
@@ -1053,6 +1083,7 @@ local function BuildAutoInviteTab(content, db)
     local container = CreateFrame("Frame", nil, content)
     container:SetWidth(W + 8)
     container:SetPoint("TOP", content, "TOP", 0, 0)
+    container:EnableKeyboard(false)  -- Don't capture keyboard
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- STATUS HEADER
@@ -1202,6 +1233,7 @@ local function BuildSendMessageTab(content, db)
     local container = CreateFrame("Frame", nil, content)
     container:SetWidth(W + 8)
     container:SetPoint("TOP", content, "TOP", 0, 0)
+    container:EnableKeyboard(false)  -- Don't capture keyboard
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- STATUS HEADER
@@ -1546,6 +1578,7 @@ local function BuildAutoReplyTab(content, db)
     local container = CreateFrame("Frame", nil, content)
     container:SetWidth(W + 8)
     container:SetPoint("TOP", content, "TOP", 0, 0)
+    container:EnableKeyboard(false)  -- Don't capture keyboard
     
     -- ═══════════════════════════════════════════════════════════════════════
     -- STATUS HEADER
@@ -1884,16 +1917,19 @@ function Advertiser:BuildConfigUI(parent)
         bgFile = "Interface\\Buttons\\WHITE8x8",
     })
     contentArea:SetBackdropColor(0.06, 0.05, 0.04, 1)
+    contentArea:EnableKeyboard(false)  -- Don't capture keyboard
     
     -- Create content for each tab
     for i, info in ipairs(tabInfo) do
         local scroll = CreateFrame("ScrollFrame", nil, contentArea, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 4, -4)
         scroll:SetPoint("BOTTOMRIGHT", -26, 4)
+        scroll:EnableKeyboard(false)  -- Don't capture keyboard
         scroll:Hide()
         
         local content = CreateFrame("Frame", nil, scroll)
         content:SetWidth(scroll:GetWidth() > 0 and scroll:GetWidth() or 440)  -- Use available width
+        content:EnableKeyboard(false)  -- Don't capture keyboard
         scroll:SetScrollChild(content)
         
         -- Store scroll reference for centering
@@ -1905,6 +1941,10 @@ function Advertiser:BuildConfigUI(parent)
     
     -- Tab switching
     local function SelectTab(index)
+        -- Clear any focused edit box when switching tabs
+        local focus = GetCurrentKeyBoardFocus()
+        if focus then focus:ClearFocus() end
+        
         selectedTab = index
         UpdateTabs()
         for i, scroll in ipairs(tabContents) do

@@ -690,6 +690,190 @@ local function showBalanceInputDialog(name, isAdd)
   dialog.goldInput:SetFocus()
 end
 
+-- Dialog to update returning customer stats (completed runs + refund)
+local function showUpdateCustomerDialog(name)
+  local db = getDB()
+  local entry = ensureBoostie(name)
+  if not entry then return end
+  
+  -- Check if this customer exists in all clients
+  local clientData = db.clients and db.clients[name]
+  
+  local dialog = _G["BoostilatorUpdateCustomerDialog"]
+  if not dialog then
+    dialog = CreateFrame("Frame", "BoostilatorUpdateCustomerDialog", UIParent, "BackdropTemplate")
+    dialog:SetSize(320, 200)
+    dialog:SetPoint("CENTER")
+    dialog:SetFrameStrata("DIALOG")
+    dialog:SetFrameLevel(200)
+    dialog:SetBackdrop({
+      bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+      edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
+      edgeSize = 16,
+      insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    dialog:SetBackdropColor(0.1, 0.08, 0.05, 0.98)
+    dialog:SetBackdropBorderColor(0.4, 0.8, 1, 1)  -- Blue tint for update
+    dialog:SetMovable(true)
+    dialog:EnableMouse(true)
+    dialog:RegisterForDrag("LeftButton")
+    dialog:SetScript("OnDragStart", dialog.StartMoving)
+    dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+    dialog:SetClampedToScreen(true)
+    
+    dialog.title = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    dialog.title:SetPoint("TOP", 0, -12)
+    dialog.title:SetText("|cff00CCFFUpdate Customer|r")
+    
+    dialog.label = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    dialog.label:SetPoint("TOP", dialog.title, "BOTTOM", 0, -6)
+    
+    -- Customer stats display
+    dialog.statsText = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.statsText:SetPoint("TOP", dialog.label, "BOTTOM", 0, -4)
+    dialog.statsText:SetTextColor(0.6, 0.6, 0.6)
+    
+    -- Completed runs input row
+    dialog.completedLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.completedLabel:SetPoint("TOPLEFT", 30, -80)
+    dialog.completedLabel:SetText("Runs Completed:")
+    
+    dialog.completedInput = CreateFrame("EditBox", nil, dialog, "InputBoxTemplate")
+    dialog.completedInput:SetSize(50, 22)
+    dialog.completedInput:SetPoint("LEFT", dialog.completedLabel, "RIGHT", 8, 0)
+    dialog.completedInput:SetAutoFocus(false)
+    dialog.completedInput:SetNumeric(true)
+    dialog.completedInput:SetMaxLetters(3)
+    dialog.completedInput:SetJustifyH("CENTER")
+    
+    -- Refund gold input row
+    dialog.refundLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.refundLabel:SetPoint("TOPLEFT", 30, -108)
+    dialog.refundLabel:SetText("Refund Amount:")
+    
+    dialog.refundInput = CreateFrame("EditBox", nil, dialog, "InputBoxTemplate")
+    dialog.refundInput:SetSize(60, 22)
+    dialog.refundInput:SetPoint("LEFT", dialog.refundLabel, "RIGHT", 8, 0)
+    dialog.refundInput:SetAutoFocus(false)
+    dialog.refundInput:SetNumeric(true)
+    dialog.refundInput:SetMaxLetters(5)
+    dialog.refundInput:SetJustifyH("CENTER")
+    
+    dialog.refundGoldLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.refundGoldLabel:SetPoint("LEFT", dialog.refundInput, "RIGHT", 4, 0)
+    dialog.refundGoldLabel:SetText("g")
+    
+    -- Earnings preview
+    dialog.earningsText = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    dialog.earningsText:SetPoint("TOP", dialog.refundLabel, "BOTTOM", 60, -12)
+    dialog.earningsText:SetText("|cff00FF00Earned: 0g|r")
+    
+    -- Update earnings preview when inputs change
+    local function updateEarningsPreview()
+      local completed = tonumber(dialog.completedInput:GetText()) or 0
+      local refund = tonumber(dialog.refundInput:GetText()) or 0
+      local entry = dialog.boostieEntry
+      if entry then
+        local pricePerRun = entry.pricePerRun or (getDB().pricePerRun or 100000)
+        local totalPaid = (entry.runs or 0) * pricePerRun  -- What they originally paid for remaining runs
+        local earned = (completed * pricePerRun) - (refund * 10000)  -- Completed value minus refund
+        if earned >= 0 then
+          dialog.earningsText:SetText("|cff00FF00Earned: " .. formatGold(earned) .. "|r")
+        else
+          dialog.earningsText:SetText("|cffFF6666Loss: " .. formatGold(-earned) .. "|r")
+        end
+      end
+    end
+    
+    dialog.completedInput:SetScript("OnTextChanged", updateEarningsPreview)
+    dialog.refundInput:SetScript("OnTextChanged", updateEarningsPreview)
+    
+    dialog.okBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    dialog.okBtn:SetSize(80, 22)
+    dialog.okBtn:SetPoint("BOTTOMLEFT", 50, 12)
+    dialog.okBtn:SetText("Update")
+    
+    dialog.cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    dialog.cancelBtn:SetSize(60, 22)
+    dialog.cancelBtn:SetPoint("BOTTOMRIGHT", -50, 12)
+    dialog.cancelBtn:SetText("Cancel")
+    dialog.cancelBtn:SetScript("OnClick", function()
+      dialog:Hide()
+    end)
+    
+    dialog.completedInput:SetScript("OnEnterPressed", function()
+      dialog.refundInput:SetFocus()
+    end)
+    dialog.refundInput:SetScript("OnEnterPressed", function()
+      dialog.okBtn:Click()
+    end)
+    dialog.completedInput:SetScript("OnEscapePressed", function()
+      dialog:Hide()
+    end)
+    dialog.refundInput:SetScript("OnEscapePressed", function()
+      dialog:Hide()
+    end)
+    
+    local closeBtn = CreateFrame("Button", nil, dialog, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetScript("OnClick", function() dialog:Hide() end)
+  end
+  
+  dialog.boostieName = name
+  dialog.boostieEntry = entry
+  
+  dialog.label:SetText("|cffFFD700" .. name .. "|r")
+  
+  -- Show current stats
+  local pricePerRun = entry.pricePerRun or db.pricePerRun or 100000
+  local runsLeft = entry.runs or 0
+  local statsStr = "Runs left: " .. runsLeft .. "  |  Price/run: " .. formatGold(pricePerRun)
+  if clientData then
+    statsStr = statsStr .. "\nAll-time: " .. (clientData.totalRuns or 0) .. " runs, " .. formatGold(clientData.totalGold or 0)
+  end
+  dialog.statsText:SetText(statsStr)
+  
+  dialog.completedInput:SetText("")
+  dialog.refundInput:SetText("")
+  dialog.earningsText:SetText("|cff00FF00Earned: 0g|r")
+  
+  dialog.okBtn:SetScript("OnClick", function()
+    local completed = tonumber(dialog.completedInput:GetText()) or 0
+    local refund = tonumber(dialog.refundInput:GetText()) or 0
+    
+    if completed > 0 or refund > 0 then
+      local pricePerRun = entry.pricePerRun or db.pricePerRun or 100000
+      local refundCopper = refund * 10000
+      local earnedCopper = (completed * pricePerRun) - refundCopper
+      
+      -- Update session: reduce runs by completed amount
+      entry.runs = math.max(0, (entry.runs or 0) - completed)
+      if entry.runs == 0 then
+        entry.pricePerRun = nil
+      end
+      
+      -- Update all-time client stats: add the earned amount (completed runs value minus refund)
+      if earnedCopper > 0 then
+        recordClientStats(name, completed, earnedCopper)
+        EasyLife:Print("|cff00CCFFUpdated " .. name .. ":|r " .. completed .. " runs done, " .. refund .. "g refund, |cff00FF00earned " .. formatGold(earnedCopper) .. "|r", "Boostilator")
+      else
+        -- Still record the runs but with adjusted gold
+        if clientData then
+          clientData.totalRuns = (clientData.totalRuns or 0) + completed
+          clientData.totalGold = math.max(0, (clientData.totalGold or 0) + earnedCopper)
+        end
+        EasyLife:Print("|cff00CCFFUpdated " .. name .. ":|r " .. completed .. " runs done, " .. refund .. "g refund", "Boostilator")
+      end
+      
+      Boostilator:RefreshUI()
+    end
+    dialog:Hide()
+  end)
+  
+  dialog:Show()
+  dialog.completedInput:SetFocus()
+end
+
 -- Dropdown menu for boostie
 local function initBoostieDropdown(self, level)
   local name = self.boostieName
@@ -701,8 +885,10 @@ local function initBoostieDropdown(self, level)
   level = level or 1
   
   if level == 1 then
+    local info
+    
     -- Header
-    local info = UIDropDownMenu_CreateInfo()
+    info = UIDropDownMenu_CreateInfo()
     info.text = "|cffFFD700" .. name .. "|r"
     info.isTitle = true
     info.notCheckable = true
@@ -724,9 +910,9 @@ local function initBoostieDropdown(self, level)
     info.notCheckable = true
     UIDropDownMenu_AddButton(info, level)
     
-    -- Add balance (+)
+    -- Add Runs (+)
     info = UIDropDownMenu_CreateInfo()
-    info.text = "|cff00FF00+|r  Add Balance"
+    info.text = "|cff00FF00+|r  Add Runs"
     info.notCheckable = true
     info.func = function()
       CloseDropDownMenus()
@@ -734,15 +920,27 @@ local function initBoostieDropdown(self, level)
     end
     UIDropDownMenu_AddButton(info, level)
     
-    -- Remove balance (-)
+    -- Remove Runs (-)
     info = UIDropDownMenu_CreateInfo()
-    info.text = "|cffFF6666-|r  Remove Balance"
+    info.text = "|cffFF6666-|r  Remove Runs"
     info.notCheckable = true
     info.func = function()
       CloseDropDownMenus()
       showBalanceInputDialog(name, false)
     end
     UIDropDownMenu_AddButton(info, level)
+    
+    -- Update Customer (for returning customers - show if they have runs)
+    if (entry.runs or 0) > 0 then
+      info = UIDropDownMenu_CreateInfo()
+      info.text = "|cff00CCFF*|r  Update Customer"
+      info.notCheckable = true
+      info.func = function()
+        CloseDropDownMenus()
+        showUpdateCustomerDialog(name)
+      end
+      UIDropDownMenu_AddButton(info, level)
+    end
     
     -- Separator
     info = UIDropDownMenu_CreateInfo()
@@ -1523,17 +1721,33 @@ function Boostilator:BuildConfigUI(parent)
   raidBtnLbl:SetPoint("LEFT", raidBtn, "RIGHT", 2, 0)
   raidBtnLbl:SetText("Raid")
   
+  local whisperOnlyBtn = CreateFrame("CheckButton", nil, settings, "UIRadioButtonTemplate")
+  whisperOnlyBtn:SetSize(20, 20)
+  whisperOnlyBtn:SetPoint("TOPLEFT", 185, -105)
+  whisperOnlyBtn:SetChecked((db.announceChannel or "PARTY") == "WHISPER")
+  
+  local whisperOnlyBtnLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  whisperOnlyBtnLbl:SetPoint("LEFT", whisperOnlyBtn, "RIGHT", 2, 0)
+  whisperOnlyBtnLbl:SetText("Whisper Only")
+  
   -- Radio button behavior
   partyBtn:SetScript("OnClick", function()
     partyBtn:SetChecked(true)
     raidBtn:SetChecked(false)
+    whisperOnlyBtn:SetChecked(false)
   end)
   raidBtn:SetScript("OnClick", function()
     raidBtn:SetChecked(true)
     partyBtn:SetChecked(false)
+    whisperOnlyBtn:SetChecked(false)
+  end)
+  whisperOnlyBtn:SetScript("OnClick", function()
+    whisperOnlyBtn:SetChecked(true)
+    partyBtn:SetChecked(false)
+    raidBtn:SetChecked(false)
   end)
   
-  -- Whisper each boostie checkbox
+  -- Also whisper each boostie checkbox (only relevant for Party/Raid)
   local whisperCheck = CreateFrame("CheckButton", nil, settings, "UICheckButtonTemplate")
   whisperCheck:SetSize(22, 22)
   whisperCheck:SetPoint("TOPLEFT", 15, -122)
@@ -1607,7 +1821,7 @@ function Boostilator:BuildConfigUI(parent)
     db.price5Runs = (tonumber(input5:GetText()) or 45) * 10000
     db.price10Runs = (tonumber(input10:GetText()) or 80) * 10000
     db.announceEnabled = announceCheck:GetChecked()
-    db.announceChannel = raidBtn:GetChecked() and "RAID" or "PARTY"
+    db.announceChannel = whisperOnlyBtn:GetChecked() and "WHISPER" or (raidBtn:GetChecked() and "RAID" or "PARTY")
     db.announceWhisper = whisperCheck:GetChecked()
     -- Save templates
     db.announceTemplates = db.announceTemplates or {}
@@ -1659,10 +1873,10 @@ function Boostilator:BuildConfigUI(parent)
     end
   end
   
-  -- Session tab - WoW style
+  -- Session tab - WoW style (centered with clients tab)
   ui.sessionTab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
   ui.sessionTab:SetSize(165, 22)
-  ui.sessionTab:SetPoint("LEFT", 4, 0)
+  ui.sessionTab:SetPoint("RIGHT", tabBar, "CENTER", -2, 0)  -- Right edge at center
   ui.sessionTab:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1678,10 +1892,10 @@ function Boostilator:BuildConfigUI(parent)
     Boostilator:RefreshUI()
   end)
   
-  -- Clients tab - WoW style
+  -- Clients tab - WoW style (centered with session tab)
   ui.clientsTab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
   ui.clientsTab:SetSize(165, 22)
-  ui.clientsTab:SetPoint("LEFT", ui.sessionTab, "RIGHT", 2, 0)
+  ui.clientsTab:SetPoint("LEFT", tabBar, "CENTER", 2, 0)  -- Left edge at center
   ui.clientsTab:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1867,6 +2081,7 @@ function Boostilator:AnnounceRuns(templateType)
   local members = getPartyMembers()
   local maxRuns = db.maxRuns or 5
   local channel = db.announceChannel or "PARTY"
+  local whisperOnly = channel == "WHISPER"
   templateType = templateType or "runsRemaining"
   
   -- Ensure templates exist
@@ -1875,8 +2090,10 @@ function Boostilator:AnnounceRuns(templateType)
   local customFooter = db.announceTemplates.custom or ""
   
   -- Check if we're in the right group type
-  if channel == "RAID" and not IsInRaid() then
-    channel = "PARTY"
+  if not whisperOnly then
+    if channel == "RAID" and not IsInRaid() then
+      channel = "PARTY"
+    end
   end
   if not IsInGroup() then
     EasyLife:Print("|cffFF6666Not in a group!|r", "Boostilator")
@@ -1885,9 +2102,22 @@ function Boostilator:AnnounceRuns(templateType)
   
   -- Free run is a single message for everyone, no names
   if templateType == "freeRun" then
-    local msg = "[EasyLife]: " .. template
-    SendChatMessage(msg, channel)
-    EasyLife:Print("|cff00FF00[Free Run]|r Announced!", "Boostilator")
+    if whisperOnly then
+      -- Whisper free run message to each party member
+      local messageDelay = 0
+      for _, name in ipairs(members) do
+        local targetName = name
+        C_Timer.After(messageDelay, function()
+          SendChatMessage("[EasyLife]: " .. template, "WHISPER", nil, targetName)
+        end)
+        messageDelay = messageDelay + 0.3
+      end
+      EasyLife:Print("|cff00FF00[Free Run]|r Whispered to " .. #members .. " boostie(s)!", "Boostilator")
+    else
+      local msg = "[EasyLife]: " .. template
+      SendChatMessage(msg, channel)
+      EasyLife:Print("|cff00FF00[Free Run]|r Announced!", "Boostilator")
+    end
     return
   end
   
@@ -1913,27 +2143,11 @@ function Boostilator:AnnounceRuns(templateType)
     return
   end
   
-  -- Send each boostie message immediately with EasyLife prefix
+  -- Send each boostie message
   local messageDelay = 0
-  for i, part in ipairs(parts) do
-    local msg = "[EasyLife]: " .. part.msg
-    local ch = channel
-    C_Timer.After(messageDelay, function()
-      SendChatMessage(msg, ch)
-    end)
-    messageDelay = messageDelay + 0.3  -- Small delay between messages to avoid spam
-  end
   
-  -- Send footer message if configured
-  if customFooter and customFooter ~= "" then
-    C_Timer.After(messageDelay, function()
-      SendChatMessage("[EasyLife]: " .. customFooter, channel)
-    end)
-    messageDelay = messageDelay + 0.3
-  end
-  
-  -- Also whisper each boostie if enabled
-  if db.announceWhisper then
+  if whisperOnly then
+    -- Whisper Only: Send personalized whisper to each boostie
     for _, part in ipairs(parts) do
       local entry = db.boosties[part.name]
       if entry then
@@ -1949,6 +2163,43 @@ function Boostilator:AnnounceRuns(templateType)
         messageDelay = messageDelay + 0.3
       end
     end
+  else
+    -- Party/Raid: Send to chat channel
+    for i, part in ipairs(parts) do
+      local msg = "[EasyLife]: " .. part.msg
+      local ch = channel
+      C_Timer.After(messageDelay, function()
+        SendChatMessage(msg, ch)
+      end)
+      messageDelay = messageDelay + 0.3  -- Small delay between messages to avoid spam
+    end
+    
+    -- Send footer message if configured
+    if customFooter and customFooter ~= "" then
+      C_Timer.After(messageDelay, function()
+        SendChatMessage("[EasyLife]: " .. customFooter, channel)
+      end)
+      messageDelay = messageDelay + 0.3
+    end
+    
+    -- Also whisper each boostie if enabled
+    if db.announceWhisper then
+      for _, part in ipairs(parts) do
+        local entry = db.boosties[part.name]
+        if entry then
+          local runs = entry.runs or 0
+          local whisperMsg = "[EasyLife]: You have " .. runs .. "/" .. maxRuns .. " runs remaining."
+          if entry.balance and entry.balance > 0 then
+            whisperMsg = whisperMsg .. " Balance: " .. math.floor(entry.balance / 10000) .. "g"
+          end
+          local targetName = part.name
+          C_Timer.After(messageDelay, function()
+            SendChatMessage(whisperMsg, "WHISPER", nil, targetName)
+          end)
+          messageDelay = messageDelay + 0.3
+        end
+      end
+    end
   end
   
   -- Show confirmation to user
@@ -1958,7 +2209,8 @@ function Boostilator:AnnounceRuns(templateType)
     runsDone = "Done",
   }
   local typeName = typeNames[templateType] or templateType
-  EasyLife:Print("|cff00FF00[" .. typeName .. "]|r Sent " .. #parts .. " announcement(s)!", "Boostilator")
+  local modeLabel = whisperOnly and "whisper(s)" or "announcement(s)"
+  EasyLife:Print("|cff00FF00[" .. typeName .. "]|r Sent " .. #parts .. " " .. modeLabel .. "!", "Boostilator")
 end
 
 -- Show announce dropdown menu

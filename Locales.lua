@@ -259,6 +259,76 @@ Get warned BEFORE you pull aggro:
 • Enable/disable sound effects
 
 |cffAAAAAATip: Set threat warning to 80% to know when to slow down!|r]],
+
+  -- AutoHelper
+  AUTOHELPER_TITLE = "Auto Helper",
+  AUTOHELPER_DESC = "Auto sell junk, repair gear, accept summons",
+  AUTOHELPER_ENABLE = "Enable Auto Helper",
+  AUTOHELPER_JUNK_HEADER = "Auto Sell Junk",
+  AUTOHELPER_AUTO_SELL_JUNK = "Automatically sell gray items at vendors",
+  AUTOHELPER_AUTO_SELL_JUNK_TIP = "When you open a vendor window, all gray quality items in your bags will be sold automatically.",
+  AUTOHELPER_REPAIR_HEADER = "Auto Repair",
+  AUTOHELPER_AUTO_REPAIR = "Automatically repair gear at vendors",
+  AUTOHELPER_AUTO_REPAIR_TIP = "When you visit a vendor that can repair, your gear will be repaired automatically.",
+  AUTOHELPER_USE_GUILD_REPAIR = "Use guild bank funds first",
+  AUTOHELPER_USE_GUILD_REPAIR_TIP = "Try to use guild bank for repairs before using personal gold. Falls back to personal gold if guild funds unavailable.",
+  AUTOHELPER_SUMMON_HEADER = "Auto Accept Summon",
+  AUTOHELPER_AUTO_ACCEPT_SUMMON = "Automatically accept summons",
+  AUTOHELPER_AUTO_ACCEPT_SUMMON_TIP = "When you receive a summon, it will be accepted automatically after a short delay.",
+  AUTOHELPER_SUMMON_DELAY = "Summon Accept Delay",
+  AUTOHELPER_INFO = "Features activate automatically when visiting vendors or receiving summons.",
+  AUTOHELPER_SOLD_JUNK = "Sold %d junk item(s) for %s",
+  AUTOHELPER_REPAIRED = "Repaired all gear for %s (%s)",
+  AUTOHELPER_REPAIR_NO_MONEY = "Not enough money to repair!",
+  AUTOHELPER_GUILD_BANK = "guild bank",
+  AUTOHELPER_PERSONAL = "personal",
+  AUTOHELPER_SUMMON_ACCEPTED = "Accepted summon from %s to %s",
+  -- Smart Destroy
+  AUTOHELPER_DESTROY_HEADER = "Smart Bag Management",
+  AUTOHELPER_SMART_DESTROY = "Enable smart junk destroy when looting",
+  AUTOHELPER_SMART_DESTROY_TIP = "When your bags are full while looting, automatically destroy the cheapest junk item to make room - but only if the new item is worth more.",
+  AUTOHELPER_DESTROY_ONLY_GRAY = "Only destroy gray items",
+  AUTOHELPER_DESTROY_ONLY_GRAY_TIP = "When enabled, only gray (poor) quality items can be destroyed. Disable to also consider white (common) items.",
+  AUTOHELPER_MAX_DESTROY_VALUE = "Maximum item value to destroy",
+  AUTOHELPER_PROTECT_SLOTS = "Reserved bag slots",
+  AUTOHELPER_SLOTS = "slots",
+  AUTOHELPER_DESTROYED_FOR_LOOT = "Destroyed %s (%s) to loot %s (%s)",
+  AUTOHELPER_LOOT_NOT_WORTH = "Skipped %s (%s) - not worth destroying junk (%s)",
+  AUTOHELPER_SMART_DESTROY_INFO = "Smart Destroy compares item values when bags are full. It only destroys a junk item if the loot is worth MORE than the cheapest junk in your bags.",
+  AUTOHELPER_DESTROY_JUNK_BTN = "Destroy All Junk",
+  AUTOHELPER_DESTROY_JUNK_BTN_TIP = "Immediately destroy all gray items in your bags that are below the maximum value threshold. This cannot be undone!",
+  AUTOHELPER_DESTROYED_JUNK = "Destroyed %d junk item(s) worth %s",
+  AUTOHELPER_NO_JUNK_TO_DESTROY = "No junk items to destroy!",
+  AUTOHELPER_DESTROY_WARNING = "⚠ Cannot be undone!",
+  AUTOHELPER_FIRST_RUN_DETAILED = [[|cffFFD700Welcome to Auto Helper!|r
+
+Automate common tasks to save time.
+
+|cff00FF00=== AUTO SELL JUNK ===|r
+When visiting any vendor:
+• Automatically sells all gray items
+• Shows total gold earned
+• No more manual bag cleaning!
+
+|cff00FF00=== AUTO REPAIR ===|r
+When visiting a repair vendor:
+• Automatically repairs all gear
+• Option to use guild bank funds
+• Falls back to personal gold if needed
+
+|cff00FF00=== AUTO SUMMON ===|r
+When someone summons you:
+• Automatically accepts after short delay
+• Shows who summoned and destination
+
+|cff00FF00=== SMART BAG MANAGEMENT ===|r
+When your bags are full:
+• Compares new loot vs cheapest junk
+• Auto-destroys junk if loot is worth more
+• Protects valuable items from deletion
+• Set max value limit for safety
+
+|cffAAAAAATip: All features can be toggled individually!|r]],
 }
 
 local L_trTR = {
@@ -451,6 +521,76 @@ Aggro cekmeden ONCE uyari alin.
 • Esik degeri ayarlayin (orn. %80)
 
 |cffAAAAAATip: %80 uyari esigi oneririz!|r]],
+
+  -- AutoHelper
+  AUTOHELPER_TITLE = "Oto Yardimci",
+  AUTOHELPER_DESC = "Otomatik cop sat, onar, cagriya kabul et",
+  AUTOHELPER_ENABLE = "Oto Yardimci'yi Etkinlestir",
+  AUTOHELPER_JUNK_HEADER = "Otomatik Cop Satisi",
+  AUTOHELPER_AUTO_SELL_JUNK = "Saticida gri esyalari otomatik sat",
+  AUTOHELPER_AUTO_SELL_JUNK_TIP = "Satici penceresini actiginizda, cantanizdaki tum gri kalitedeki esyalar otomatik olarak satilir.",
+  AUTOHELPER_REPAIR_HEADER = "Otomatik Onarim",
+  AUTOHELPER_AUTO_REPAIR = "Saticida ekipmani otomatik onar",
+  AUTOHELPER_AUTO_REPAIR_TIP = "Onarim yapabilen bir saticiyi ziyaret ettiginizde, ekipmaniniz otomatik olarak onarilir.",
+  AUTOHELPER_USE_GUILD_REPAIR = "Once lonca bankasini kullan",
+  AUTOHELPER_USE_GUILD_REPAIR_TIP = "Onarim icin once lonca bankasini kullanmayi dene. Lonca parasi yoksa kisisel altina gecer.",
+  AUTOHELPER_SUMMON_HEADER = "Otomatik Cagri Kabul",
+  AUTOHELPER_AUTO_ACCEPT_SUMMON = "Cagrilari otomatik kabul et",
+  AUTOHELPER_AUTO_ACCEPT_SUMMON_TIP = "Bir cagri aldiginizda, kisa bir gecikmeden sonra otomatik olarak kabul edilir.",
+  AUTOHELPER_SUMMON_DELAY = "Cagri Kabul Gecikmesi",
+  AUTOHELPER_INFO = "Ozellikler satici ziyaretinde veya cagri aldiginda otomatik calisir.",
+  AUTOHELPER_SOLD_JUNK = "%d cop esya satildi: %s",
+  AUTOHELPER_REPAIRED = "Tum ekipman onarildi: %s (%s)",
+  AUTOHELPER_REPAIR_NO_MONEY = "Onarim icin yeterli para yok!",
+  AUTOHELPER_GUILD_BANK = "lonca bankasi",
+  AUTOHELPER_PERSONAL = "kisisel",
+  AUTOHELPER_SUMMON_ACCEPTED = "%s tarafindan %s'e cagri kabul edildi",
+  -- Smart Destroy
+  AUTOHELPER_DESTROY_HEADER = "Akilli Canta Yonetimi",
+  AUTOHELPER_SMART_DESTROY = "Loot alirken akilli cop silme",
+  AUTOHELPER_SMART_DESTROY_TIP = "Loot alirken cantaniz doluysa, yer acmak icin en ucuz cop esyayi otomatik siler - ancak yeni esya daha degerli ise.",
+  AUTOHELPER_DESTROY_ONLY_GRAY = "Sadece gri esyalari sil",
+  AUTOHELPER_DESTROY_ONLY_GRAY_TIP = "Etkinlestirildiginde, sadece gri (zayif) kalitedeki esyalar silinebilir. Beyaz (siradan) esyalari da dahil etmek icin devre disi birakin.",
+  AUTOHELPER_MAX_DESTROY_VALUE = "Silinecek maksimum esya degeri",
+  AUTOHELPER_PROTECT_SLOTS = "Ayrilmis canta yerleri",
+  AUTOHELPER_SLOTS = "yer",
+  AUTOHELPER_DESTROYED_FOR_LOOT = "%s (%s) silindi, %s (%s) icin",
+  AUTOHELPER_LOOT_NOT_WORTH = "%s (%s) atlanidi - cop silmeye degmez (%s)",
+  AUTOHELPER_SMART_DESTROY_INFO = "Akilli Silme, cantaniz doluyken esya degerlerini karsilastirir. Sadece loot, cantanizdaki en ucuz coptan DAHA DEGERLI ise cop esyayi siler.",
+  AUTOHELPER_DESTROY_JUNK_BTN = "Tum Coplari Sil",
+  AUTOHELPER_DESTROY_JUNK_BTN_TIP = "Cantanizdaki maksimum deger esiginin altindaki tum gri esyalari hemen siler. Bu geri alinamaz!",
+  AUTOHELPER_DESTROYED_JUNK = "%d cop esya silindi, degeri: %s",
+  AUTOHELPER_NO_JUNK_TO_DESTROY = "Silinecek cop esya yok!",
+  AUTOHELPER_DESTROY_WARNING = "⚠ Geri alinamaz!",
+  AUTOHELPER_FIRST_RUN_DETAILED = [[|cffFFD700Oto Yardimci'ya Hosgeldiniz!|r
+
+Zaman kazanmak icin gorevleri otomatiklestirin.
+
+|cff00FF00=== OTO COP SATISI ===|r
+Herhangi bir saticiyi ziyaret ettiginde:
+• Tum gri esyalari otomatik satar
+• Kazanilan altini gosterir
+• Elle canta temizligi yok!
+
+|cff00FF00=== OTO ONARIM ===|r
+Onarim saticisini ziyaret ettiginde:
+• Tum ekipmani otomatik onarir
+• Lonca bankasi kullanimi secenegi
+• Gerekirse kisisel altina gecer
+
+|cff00FF00=== OTO CAGRI ===|r
+Biri sizi cagirdiginda:
+• Kisa gecikmeden sonra otomatik kabul
+• Cagirani ve hedefi gosterir
+
+|cff00FF00=== AKILLI CANTA YONETIMI ===|r
+Cantaniz doluyken:
+• Yeni loot vs en ucuz copu karsilastirir
+• Loot daha degerliyse copu otomatik siler
+• Degerli esyalari silinmekten korur
+• Guvenlik icin maksimum deger siniri
+
+|cffAAAAAATip: Tum ozellikler ayri ayri acilip kapatilabilir!|r]],
 }
 
 function EasyLife:L(key)

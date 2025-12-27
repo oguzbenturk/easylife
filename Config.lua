@@ -13,6 +13,7 @@ local MODULE_LIST = {
   { name = "AggroAlert", key = "AGGRO_TITLE", descKey = "AGGRO_DESC", firstRunKey = "AGGRO_FIRST_RUN_DETAILED" },
   { name = "RangeIndicator", key = "RANGE_TITLE", descKey = "RANGE_DESC", firstRunKey = "RANGE_FIRST_RUN_DETAILED" },
   { name = "CastBarAura", key = "CAST_TITLE", descKey = "CAST_DESC", firstRunKey = "CAST_FIRST_RUN_DETAILED" },
+  { name = "AutoHelper", key = "AUTOHELPER_TITLE", descKey = "AUTOHELPER_DESC", firstRunKey = "AUTOHELPER_FIRST_RUN_DETAILED" },
 }
 
 local function L(key)
@@ -35,6 +36,7 @@ local MODULE_DB_KEYS = {
   AggroAlert = "aggroAlert",
   RangeIndicator = "rangeIndicator",
   CastBarAura = "castBarAura",
+  AutoHelper = "autoHelper",
 }
 
 -- Some modules use EasyLifeDB directly, others use EasyLife:GetDB()
@@ -42,6 +44,7 @@ local MODULE_USES_GLOBAL_DB = {
   Advertise = true,
   Boostilator = true,
   VendorTracker = true,
+  AutoHelper = true,
 }
 
 local function setModuleEnabled(name, enabled)
@@ -323,7 +326,7 @@ local function createSettingsFrame()
   if moduleSettingsFrame then return moduleSettingsFrame end
   
   moduleSettingsFrame = CreateFrame("Frame", "EasyLifeModuleSettingsFrame", UIParent, "BackdropTemplate")
-  moduleSettingsFrame:SetSize(500, 420)
+  moduleSettingsFrame:SetSize(500, 520)
   moduleSettingsFrame:SetPoint("CENTER")
   moduleSettingsFrame:SetFrameStrata("HIGH")  -- Allow game interaction while open
   moduleSettingsFrame:SetFrameLevel(50)
@@ -351,11 +354,28 @@ local function createSettingsFrame()
   local closeBtn = CreateFrame("Button", nil, moduleSettingsFrame, "UIPanelCloseButton")
   closeBtn:SetPoint("TOPRIGHT", -4, -4)
   
-  -- Content area
-  moduleSettingsFrame.content = CreateFrame("Frame", nil, moduleSettingsFrame)
-  moduleSettingsFrame.content:SetPoint("TOPLEFT", 14, -40)
-  moduleSettingsFrame.content:SetPoint("BOTTOMRIGHT", -14, 14)
-  moduleSettingsFrame.content:EnableKeyboard(false)  -- Don't capture keyboard
+  -- Scroll frame for content
+  local scrollFrame = CreateFrame("ScrollFrame", nil, moduleSettingsFrame, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetPoint("TOPLEFT", 14, -40)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -32, 14)
+  scrollFrame:EnableKeyboard(false)
+  moduleSettingsFrame.scrollFrame = scrollFrame
+  
+  -- Scroll child (this is what modules will build their UI into)
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollChild:SetSize(scrollFrame:GetWidth(), 800)  -- Height will be adjusted dynamically
+  scrollFrame:SetScrollChild(scrollChild)
+  moduleSettingsFrame.content = scrollChild
+  
+  -- Enable mouse wheel scrolling
+  scrollFrame:EnableMouseWheel(true)
+  scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+    local current = self:GetVerticalScroll()
+    local maxScroll = self:GetVerticalScrollRange()
+    local newScroll = current - (delta * 40)  -- 40 pixels per scroll
+    newScroll = math.max(0, math.min(newScroll, maxScroll))
+    self:SetVerticalScroll(newScroll)
+  end)
   
   moduleSettingsFrame:Hide()
   tinsert(UISpecialFrames, "EasyLifeModuleSettingsFrame")
@@ -378,6 +398,11 @@ local function clearSettingsContent()
     region:Hide()
     if region.SetText then region:SetText("") end
     if region.SetTexture then region:SetTexture(nil) end
+  end
+  
+  -- Reset scroll position
+  if moduleSettingsFrame.scrollFrame then
+    moduleSettingsFrame.scrollFrame:SetVerticalScroll(0)
   end
 end
 

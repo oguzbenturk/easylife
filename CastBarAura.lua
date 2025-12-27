@@ -214,6 +214,45 @@ function CastBarAura:ClearAllCasts()
   wipe(activeCasts)
 end
 
+-- Helper: Check if a unit flag indicates hostile NPC
+local function IsHostileNPC(flags)
+  if not flags then return false end
+  -- COMBATLOG_OBJECT_TYPE_NPC = 0x800
+  -- COMBATLOG_OBJECT_REACTION_HOSTILE = 0x40
+  local isNPC = bit.band(flags, 0x800) > 0
+  local isHostile = bit.band(flags, 0x40) > 0
+  return isNPC and isHostile
+end
+
+-- Helper: Find unit from GUID to check if targeting player
+local function FindUnitFromGUID(guid)
+  -- Check nameplates
+  for i = 1, 40 do
+    local unit = "nameplate" .. i
+    if UnitExists(unit) and UnitGUID(unit) == guid then
+      return unit
+    end
+  end
+  -- Check target/focus
+  if UnitExists("target") and UnitGUID("target") == guid then
+    return "target"
+  end
+  if UnitExists("focus") and UnitGUID("focus") == guid then
+    return "focus"
+  end
+  return nil
+end
+
+-- Helper: Check if a unit is targeting the player
+local function IsUnitTargetingPlayer(unit)
+  if not unit or not UnitExists(unit) then return false end
+  local targetUnit = unit .. "target"
+  if UnitExists(targetUnit) and UnitIsUnit(targetUnit, "player") then
+    return true
+  end
+  return false
+end
+
 local function OnCombatLogEvent()
   local db = getDB()
   if not db.enabled then return end
@@ -221,43 +260,102 @@ local function OnCombatLogEvent()
   local timestamp, subevent, _, sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
         destGUID, destName, destFlags, destRaidFlags = CombatLogGetCurrentEventInfo()
   
-  -- Check if spell is targeting the player
   local playerGUID = UnitGUID("player")
-  if destGUID ~= playerGUID then return end
   
+  -- SPELL_CAST_START: destGUID is empty for cast starts!
+  -- We need to check if the hostile caster is targeting us
   if subevent == "SPELL_CAST_START" then
+    -- Only track hostile NPCs
+    if not IsHostileNPC(sourceFlags) then return end
+    
     local spellId, spellName = select(12, CombatLogGetCurrentEventInfo())
     local spellIcon = GetSpellTexture(spellId)
     
-    -- Get cast time from the caster unit
+    -- Find the unit casting and check if they're targeting us
+    local casterUnit = FindUnitFromGUID(sourceGUID)
+    if not casterUnit then return end
+    
+    -- Check if the caster is targeting the player
+    if not IsUnitTargetingPlayer(casterUnit) then return end
+    
+    -- Get cast time from UnitCastingInfo
     local castTime = 3  -- Default fallback
-    for i = 1, 40 do
-      local unit = "nameplate" .. i
-      if UnitExists(unit) and UnitGUID(unit) == sourceGUID then
-        local name, _, _, startTimeMs, endTimeMs = UnitCastingInfo(unit)
-        if endTimeMs and startTimeMs then
-          castTime = (endTimeMs - startTimeMs) / 1000
-        end
-        break
-      end
+    local name, _, _, startTimeMs, endTimeMs = UnitCastingInfo(casterUnit)
+    if endTimeMs and startTimeMs then
+      castTime = (endTimeMs - startTimeMs) / 1000
     end
+    
+    -- Only show casts with meaningful cast time (ignore instant casts)
+    if castTime < 0.5 then return end
     
     CreateCastBar(sourceGUID, spellName, spellIcon, castTime, GetTime())
     
+  -- Handle cast completions/interrupts
   elseif subevent == "SPELL_CAST_SUCCESS" or subevent == "SPELL_CAST_FAILED" 
       or subevent == "SPELL_INTERRUPT" then
-    CastBarAura:RemoveCast(sourceGUID)
+    -- Remove cast bar when cast ends (for any reason)
+    if activeCasts[sourceGUID] then
+      CastBarAura:RemoveCast(sourceGUID)
+    end
   end
+end
+
+-- Alternative detection: UNIT_SPELLCAST_START fires with unit argument
+local function OnUnitSpellCastStart(unit)
+  local db = getDB()
+  if not db.enabled then return end
+  
+  -- Only track hostile units (nameplates)
+  if not unit or not string.find(unit, "nameplate") then return end
+  if not UnitExists(unit) then return end
+  
+  -- Check if hostile
+  if not UnitIsEnemy("player", unit) then return end
+  
+  -- Check if targeting player
+  if not IsUnitTargetingPlayer(unit) then return end
+  
+  -- Get cast info
+  local name, _, texture, startTimeMs, endTimeMs, _, _, _, spellId = UnitCastingInfo(unit)
+  if not name or not endTimeMs then return end
+  
+  local castTime = (endTimeMs - startTimeMs) / 1000
+  if castTime < 0.5 then return end  -- Skip very short casts
+  
+  local casterGUID = UnitGUID(unit)
+  if not casterGUID then return end
+  
+  CreateCastBar(casterGUID, name, texture, castTime, GetTime())
 end
 
 function CastBarAura:Enable()
   if not eventFrame then
     eventFrame = CreateFrame("Frame")
   end
+  
+  -- Combat log for tracking cast ends
   eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-  eventFrame:SetScript("OnEvent", function(_, event)
+  
+  -- UNIT_SPELLCAST_START for better detection of enemy casts
+  eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
+  eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
+  eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+  eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
+  
+  eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
       OnCombatLogEvent()
+    elseif event == "UNIT_SPELLCAST_START" then
+      OnUnitSpellCastStart(arg1)
+    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_INTERRUPTED" 
+        or event == "UNIT_SPELLCAST_FAILED" then
+      -- Remove cast bar when cast ends
+      if arg1 and UnitExists(arg1) then
+        local guid = UnitGUID(arg1)
+        if guid and activeCasts[guid] then
+          CastBarAura:RemoveCast(guid)
+        end
+      end
     end
   end)
   

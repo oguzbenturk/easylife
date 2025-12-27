@@ -73,9 +73,9 @@ end
 
 local DEFAULTS = {
   enabled = true,
-  pricePerRun = 100000,   -- 10g default
-  price3Runs = 270000,    -- 27g default (3-run pack)
-  price5Runs = 400000,    -- 40g default (5-run pack)
+  pricePerRun = 100000,   -- 10g default (1 run)
+  price5Runs = 450000,    -- 45g default (5-run pack)
+  price10Runs = 800000,   -- 80g default (10-run pack)
   boosties = {},
   clients = {},  -- All-time client history
   removedBoosties = {},  -- Persist removed boosties across reloads
@@ -83,17 +83,15 @@ local DEFAULTS = {
   announceChannel = "PARTY",  -- PARTY or RAID
   announceWhisper = false,  -- Also whisper each boostie individually
   maxRuns = 5,  -- Max runs per boostie (for X/Y display)
-  -- Configurable balance adjustment amounts (in gold)
-  balanceAdjust1 = 5,   -- First quick adjust amount
-  balanceAdjust2 = 10,  -- Second quick adjust amount
-  balanceAdjust3 = 20,  -- Third quick adjust amount
-  -- Announcement templates
+  -- Configurable balance adjustment amount (in gold)
+  balanceAdjust = 10,   -- Quick adjust amount for add/remove balance
+  -- Announcement templates (EasyLife: prefix is added automatically)
   announceTemplates = {
     runsStarting = "Starting boost runs! {name} has {runs}/{max} runs.",
     runsRemaining = "{name} {runs}/{max}",
     runsDone = "All runs completed for {name}! Thank you!",
     freeRun = "FREE RUN for everyone! Enjoy!",
-    custom = "EasyLife addon wishes you a good boost.",
+    custom = "",  -- Optional footer message after announcements
   },
 }
 
@@ -159,6 +157,26 @@ end
 
 -- Get class color and level for a player
 local function getPlayerClassInfo(name)
+  -- First check if this is our current target
+  if UnitExists("target") and UnitIsPlayer("target") then
+    local targetName = UnitName("target")
+    if targetName then
+      local shortTarget = targetName:match("([^%-]+)") or targetName
+      local checkName = name:match("([^%-]+)") or name
+      if shortTarget == checkName then
+        local _, class = UnitClass("target")
+        local level = UnitLevel("target")
+        local color = class and RAID_CLASS_COLORS[class]
+        -- Don't return level 0, return nil instead
+        if level and level > 0 then
+          return level, color
+        else
+          return nil, color
+        end
+      end
+    end
+  end
+  
   -- Try to get info from group
   local numGroup = GetNumGroupMembers()
   local isRaid = IsInRaid()
@@ -173,7 +191,12 @@ local function getPlayerClassInfo(name)
         local _, class = UnitClass(unit)
         local level = UnitLevel(unit)
         local color = class and RAID_CLASS_COLORS[class]
-        return level, color
+        -- Don't return level 0, return nil instead
+        if level and level > 0 then
+          return level, color
+        else
+          return nil, color
+        end
       end
     end
   end
@@ -186,7 +209,7 @@ local function ensureBoostie(name)
   if db.removedBoosties and db.removedBoosties[name] then
     return nil
   end
-  db.boosties[name] = db.boosties[name] or { runs = 0, balance = 0 }
+  db.boosties[name] = db.boosties[name] or { runs = 0, pricePerRun = nil }
   return db.boosties[name]
 end
 
@@ -259,45 +282,72 @@ function Boostilator:ScanPartyMembers()
   local members = getPartyMembers()
   local added = 0
   for _, name in ipairs(members) do
-    -- Remove from removed list and add to boosties
-    if db.removedBoosties then
-      db.removedBoosties[name] = nil
-    end
-    if not db.boosties[name] then
-      db.boosties[name] = { runs = 0, balance = 0 }
+    -- Skip if this person was manually removed (respect user's choice)
+    if db.removedBoosties and db.removedBoosties[name] then
+      -- Don't add them back, they were intentionally removed
+    elseif not db.boosties[name] then
+      -- Only add if they're not already in the list and not removed
+      db.boosties[name] = { runs = 0, pricePerRun = nil }
       added = added + 1
     end
   end
   if added > 0 then
-    EasyLife:Print("|cff00FF00Added|r " .. added .. " party member(s) to boostie list")
+    EasyLife:Print("|cff00FF00Added|r " .. added .. " party member(s) to boostie list", "Boostilator")
   else
-    EasyLife:Print("|cff888888No new party members to add|r")
+    EasyLife:Print("|cff888888No new party members to add|r", "Boostilator")
   end
   self:RefreshUI()
 end
 
 function Boostilator:AdjustRuns(name, deltaRuns, cost)
+  local db = getDB()
   local entry = ensureBoostie(name)
-  entry.runs = math.max(0, (entry.runs or 0) + deltaRuns)
-  entry.balance = (entry.balance or 0) + (cost or 0)
-  if math.abs(entry.balance) < 1 then entry.balance = 0 end
-  -- Record to client history if adding runs
+  
+  -- When adding runs, set the price per run for this boostie
   if deltaRuns > 0 and cost and cost > 0 then
+    -- Calculate price per run from the package cost
+    local pricePerRunForPackage = math.floor(cost / deltaRuns)
+    entry.pricePerRun = pricePerRunForPackage
     recordClientStats(name, deltaRuns, cost)
   end
+  
+  entry.runs = math.max(0, (entry.runs or 0) + deltaRuns)
+  
+  -- When runs reach 0, reset pricePerRun to default
+  if entry.runs == 0 then
+    entry.pricePerRun = nil
+  end
+  
   self:RefreshUI()
 end
 
 function Boostilator:AdjustBalance(name, deltaCopper)
+  -- Balance is now auto-calculated from runs * pricePerRun
+  -- This function now just adds/removes runs based on balance change
+  local db = getDB()
   local entry = ensureBoostie(name)
-  entry.balance = (entry.balance or 0) + deltaCopper
-  if math.abs(entry.balance) < 1 then entry.balance = 0 end
+  local pricePerRun = entry.pricePerRun or db.pricePerRun or 100000
+  
+  -- If adding positive balance (payment received), reduce runs
+  if deltaCopper < 0 then
+    -- Payment received - calculate runs covered
+    local runsCovered = math.floor(math.abs(deltaCopper) / pricePerRun)
+    if runsCovered > 0 then
+      entry.runs = math.max(0, (entry.runs or 0) - runsCovered)
+      if entry.runs == 0 then entry.pricePerRun = nil end
+    end
+  elseif deltaCopper > 0 then
+    -- Adding debt - increase runs
+    local runsToAdd = math.ceil(deltaCopper / pricePerRun)
+    entry.runs = (entry.runs or 0) + runsToAdd
+  end
+  
   self:RefreshUI()
 end
 
 function Boostilator:ResetBoostie(name)
   local db = getDB()
-  db.boosties[name] = { runs = 0, balance = 0 }
+  db.boosties[name] = { runs = 0, pricePerRun = nil }
   self:RefreshUI()
 end
 
@@ -306,15 +356,31 @@ function Boostilator:RemoveBoostie(name)
   db.boosties[name] = nil
   db.removedBoosties = db.removedBoosties or {}
   db.removedBoosties[name] = true  -- Track as removed (persists across reloads)
-  EasyLife:Print("|cffFF6666Removed|r |cffFFFFFF" .. name .. "|r from boostie list")
+  EasyLife:Print("|cffFF6666Removed|r |cffFFFFFF" .. name .. "|r from boostie list", "Boostilator")
   CloseDropDownMenus()  -- Close the menu immediately
   self:RefreshUI()
 end
 
 function Boostilator:ApplyPayment(name, copper)
   if not name or copper <= 0 then return end
-  self:AdjustBalance(name, -copper)
-  EasyLife:Print("Payment from |cffFFFFFF" .. name .. "|r: " .. formatGold(copper))
+  local db = getDB()
+  local entry = ensureBoostie(name)
+  if not entry then
+    -- Boostie was manually removed, just log the payment
+    EasyLife:Print("Payment from |cffFFFFFF" .. name .. "|r: " .. formatGold(copper) .. " (not tracked)", "Boostilator")
+    return
+  end
+  local pricePerRun = entry.pricePerRun or db.pricePerRun or 100000
+  
+  -- Calculate how many runs this payment covers
+  local runsCovered = math.floor(copper / pricePerRun)
+  if runsCovered > 0 then
+    entry.runs = math.max(0, (entry.runs or 0) - runsCovered)
+    if entry.runs == 0 then entry.pricePerRun = nil end
+  end
+  
+  EasyLife:Print("Payment from |cffFFFFFF" .. name .. "|r: " .. formatGold(copper) .. " (" .. runsCovered .. " runs)", "Boostilator")
+  self:RefreshUI()
 end
 
 -- Check if a player is in the current party/raid
@@ -335,8 +401,8 @@ function Boostilator:AddBoostieManual(name)
   db.removedBoosties = db.removedBoosties or {}
   db.removedBoosties[name] = nil
   -- Create the boostie entry
-  db.boosties[name] = db.boosties[name] or { runs = 0, balance = 0 }
-  EasyLife:Print("|cff00FF00Added|r |cffFFFFFF" .. name .. "|r to boostie list")
+  db.boosties[name] = db.boosties[name] or { runs = 0, pricePerRun = nil }
+  EasyLife:Print("|cff00FF00Added|r |cffFFFFFF" .. name .. "|r to boostie list", "Boostilator")
   self:RefreshUI()
 end
 
@@ -441,7 +507,7 @@ function Boostilator:ShowAddBoostieDialog()
       -- Invite to party/raid
       if not isInParty(name) then
         InviteUnit(name)
-        EasyLife:Print("|cff00FFFF[Invite sent]|r " .. name)
+        EasyLife:Print("|cff00FFFF[Invite sent]|r " .. name, "Boostilator")
       end
       nameEdit:SetText("")
       dialog:Hide()
@@ -469,6 +535,161 @@ function Boostilator:ShowAddBoostieDialog()
   nameEdit:SetFocus()
 end
 
+-- Show input dialog for adding/removing balance (gold + runs)
+local function showBalanceInputDialog(name, isAdd)
+  local db = getDB()
+  local entry = ensureBoostie(name)
+  if not entry then return end
+  
+  local dialog = _G["BoostilatorBalanceInputDialog"]
+  if not dialog then
+    dialog = CreateFrame("Frame", "BoostilatorBalanceInputDialog", UIParent, "BackdropTemplate")
+    dialog:SetSize(280, 150)
+    dialog:SetPoint("CENTER")
+    dialog:SetFrameStrata("DIALOG")
+    dialog:SetFrameLevel(200)
+    dialog:SetBackdrop({
+      bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+      edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
+      edgeSize = 16,
+      insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    dialog:SetBackdropColor(0.1, 0.08, 0.05, 0.98)
+    dialog:SetBackdropBorderColor(1, 0.85, 0.3, 1)
+    dialog:SetMovable(true)
+    dialog:EnableMouse(true)
+    dialog:RegisterForDrag("LeftButton")
+    dialog:SetScript("OnDragStart", dialog.StartMoving)
+    dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+    dialog:SetClampedToScreen(true)
+    
+    dialog.title = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    dialog.title:SetPoint("TOP", 0, -12)
+    
+    dialog.label = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    dialog.label:SetPoint("TOP", dialog.title, "BOTTOM", 0, -8)
+    
+    -- Gold input row
+    dialog.goldLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.goldLabel:SetPoint("TOPLEFT", 40, -55)
+    dialog.goldLabel:SetText("Gold:")
+    
+    dialog.goldInput = CreateFrame("EditBox", nil, dialog, "InputBoxTemplate")
+    dialog.goldInput:SetSize(60, 22)
+    dialog.goldInput:SetPoint("LEFT", dialog.goldLabel, "RIGHT", 8, 0)
+    dialog.goldInput:SetAutoFocus(false)
+    dialog.goldInput:SetNumeric(true)
+    dialog.goldInput:SetMaxLetters(5)
+    dialog.goldInput:SetJustifyH("CENTER")
+    
+    -- Runs input row
+    dialog.runsLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.runsLabel:SetPoint("LEFT", dialog.goldInput, "RIGHT", 15, 0)
+    dialog.runsLabel:SetText("Runs:")
+    
+    dialog.runsInput = CreateFrame("EditBox", nil, dialog, "InputBoxTemplate")
+    dialog.runsInput:SetSize(40, 22)
+    dialog.runsInput:SetPoint("LEFT", dialog.runsLabel, "RIGHT", 8, 0)
+    dialog.runsInput:SetAutoFocus(false)
+    dialog.runsInput:SetNumeric(true)
+    dialog.runsInput:SetMaxLetters(3)
+    dialog.runsInput:SetJustifyH("CENTER")
+    
+    -- Per-run price display
+    dialog.priceInfo = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    dialog.priceInfo:SetPoint("TOP", dialog.goldLabel, "BOTTOM", 60, -8)
+    dialog.priceInfo:SetText("|cff888888= 0g per run|r")
+    
+    -- Update price info when inputs change
+    local function updatePriceInfo()
+      local gold = tonumber(dialog.goldInput:GetText()) or 0
+      local runs = tonumber(dialog.runsInput:GetText()) or 0
+      if runs > 0 and gold > 0 then
+        local perRun = math.floor(gold / runs)
+        dialog.priceInfo:SetText("|cff888888= " .. perRun .. "g per run|r")
+      else
+        dialog.priceInfo:SetText("|cff888888= 0g per run|r")
+      end
+    end
+    
+    dialog.goldInput:SetScript("OnTextChanged", updatePriceInfo)
+    dialog.runsInput:SetScript("OnTextChanged", updatePriceInfo)
+    
+    dialog.okBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    dialog.okBtn:SetSize(60, 22)
+    dialog.okBtn:SetPoint("BOTTOMLEFT", 40, 10)
+    dialog.okBtn:SetText("OK")
+    
+    dialog.cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    dialog.cancelBtn:SetSize(60, 22)
+    dialog.cancelBtn:SetPoint("BOTTOMRIGHT", -40, 10)
+    dialog.cancelBtn:SetText("Cancel")
+    dialog.cancelBtn:SetScript("OnClick", function()
+      dialog:Hide()
+    end)
+    
+    dialog.goldInput:SetScript("OnEnterPressed", function()
+      dialog.runsInput:SetFocus()
+    end)
+    dialog.runsInput:SetScript("OnEnterPressed", function()
+      dialog.okBtn:Click()
+    end)
+    dialog.goldInput:SetScript("OnEscapePressed", function()
+      dialog:Hide()
+    end)
+    dialog.runsInput:SetScript("OnEscapePressed", function()
+      dialog:Hide()
+    end)
+    
+    local closeBtn = CreateFrame("Button", nil, dialog, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetScript("OnClick", function() dialog:Hide() end)
+  end
+  
+  dialog.boostieName = name
+  dialog.isAdd = isAdd
+  
+  if isAdd then
+    dialog.title:SetText("|cff00FF00+ Add Balance|r")
+    dialog.label:SetText("Add for " .. name .. ":")
+  else
+    dialog.title:SetText("|cffFF6666- Remove Balance|r")
+    dialog.label:SetText("Remove from " .. name .. ":")
+  end
+  
+  dialog.goldInput:SetText("")
+  dialog.runsInput:SetText("")
+  dialog.priceInfo:SetText("|cff888888= 0g per run|r")
+  
+  dialog.okBtn:SetScript("OnClick", function()
+    local gold = tonumber(dialog.goldInput:GetText()) or 0
+    local runs = tonumber(dialog.runsInput:GetText()) or 0
+    
+    if runs > 0 then
+      local copper = gold * 10000  -- Convert gold to copper
+      local pricePerRun = runs > 0 and gold > 0 and math.floor(copper / runs) or (db.pricePerRun or 100000)
+      
+      if dialog.isAdd then
+        -- Add runs with custom price per run
+        entry.runs = (entry.runs or 0) + runs
+        entry.pricePerRun = pricePerRun
+        recordClientStats(name, runs, copper)
+        EasyLife:Print("|cff00FF00Added " .. runs .. " runs (" .. gold .. "g)|r to " .. dialog.boostieName, "Boostilator")
+      else
+        -- Remove runs
+        entry.runs = math.max(0, (entry.runs or 0) - runs)
+        if entry.runs == 0 then entry.pricePerRun = nil end
+        EasyLife:Print("|cffFF6666Removed " .. runs .. " runs|r from " .. dialog.boostieName, "Boostilator")
+      end
+      Boostilator:RefreshUI()
+    end
+    dialog:Hide()
+  end)
+  
+  dialog:Show()
+  dialog.goldInput:SetFocus()
+end
+
 -- Dropdown menu for boostie
 local function initBoostieDropdown(self, level)
   local name = self.boostieName
@@ -487,9 +708,11 @@ local function initBoostieDropdown(self, level)
     info.notCheckable = true
     UIDropDownMenu_AddButton(info, level)
     
-    -- Current status
+    -- Current status (balance is auto-calculated)
+    local pricePerRun = entry.pricePerRun or db.pricePerRun or 100000
+    local calculatedBalance = (entry.runs or 0) * pricePerRun
     info = UIDropDownMenu_CreateInfo()
-    info.text = "Runs: " .. (entry.runs or 0) .. " left  |  Balance: " .. formatGold(entry.balance or 0)
+    info.text = "Runs: " .. (entry.runs or 0) .. " left  |  Balance: " .. formatGold(calculatedBalance)
     info.isTitle = true
     info.notCheckable = true
     UIDropDownMenu_AddButton(info, level)
@@ -501,35 +724,24 @@ local function initBoostieDropdown(self, level)
     info.notCheckable = true
     UIDropDownMenu_AddButton(info, level)
     
-    -- Add runs submenu
+    -- Add balance (+)
     info = UIDropDownMenu_CreateInfo()
-    info.text = "|cff00FF00Add Runs|r"
-    info.hasArrow = true
+    info.text = "|cff00FF00+|r  Add Balance"
     info.notCheckable = true
-    info.value = "add"
+    info.func = function()
+      CloseDropDownMenus()
+      showBalanceInputDialog(name, true)
+    end
     UIDropDownMenu_AddButton(info, level)
     
-    -- Remove runs submenu
+    -- Remove balance (-)
     info = UIDropDownMenu_CreateInfo()
-    info.text = "|cffFF6666Remove Runs|r"
-    info.hasArrow = true
+    info.text = "|cffFF6666-|r  Remove Balance"
     info.notCheckable = true
-    info.value = "remove"
-    UIDropDownMenu_AddButton(info, level)
-    
-    -- Separator
-    info = UIDropDownMenu_CreateInfo()
-    info.text = ""
-    info.disabled = true
-    info.notCheckable = true
-    UIDropDownMenu_AddButton(info, level)
-    
-    -- Balance submenu
-    info = UIDropDownMenu_CreateInfo()
-    info.text = "Adjust Balance"
-    info.hasArrow = true
-    info.notCheckable = true
-    info.value = "balance"
+    info.func = function()
+      CloseDropDownMenus()
+      showBalanceInputDialog(name, false)
+    end
     UIDropDownMenu_AddButton(info, level)
     
     -- Separator
@@ -566,114 +778,8 @@ local function initBoostieDropdown(self, level)
       info.notCheckable = true
       info.func = function() 
         InviteUnit(name)
-        EasyLife:Print("|cff00FFFF[Invite sent]|r " .. name)
+        EasyLife:Print("|cff00FFFF[Invite sent]|r " .. name, "Boostilator")
         CloseDropDownMenus()
-      end
-      UIDropDownMenu_AddButton(info, level)
-    end
-    
-  elseif level == 2 then
-    local submenu = UIDROPDOWNMENU_MENU_VALUE
-    local info
-    
-    if submenu == "add" then
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "+1 Run  (" .. math.floor(db.pricePerRun/10000) .. "g)"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustRuns(name, 1, db.pricePerRun) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "+3 Runs  (" .. math.floor(db.price3Runs/10000) .. "g)"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustRuns(name, 3, db.price3Runs) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "+5 Runs  (" .. math.floor(db.price5Runs/10000) .. "g)"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustRuns(name, 5, db.price5Runs) end
-      UIDropDownMenu_AddButton(info, level)
-      
-    elseif submenu == "remove" then
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "-1 Run"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustRuns(name, -1, -db.pricePerRun) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "-3 Runs"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustRuns(name, -3, -db.price3Runs) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "-5 Runs"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustRuns(name, -5, -db.price5Runs) end
-      UIDropDownMenu_AddButton(info, level)
-      
-    elseif submenu == "balance" then
-      local adj1 = db.balanceAdjust1 or 5
-      local adj2 = db.balanceAdjust2 or 10
-      local adj3 = db.balanceAdjust3 or 20
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cff00FF00+" .. adj1 .. "g|r"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustBalance(name, adj1 * 10000) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cff00FF00+" .. adj2 .. "g|r"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustBalance(name, adj2 * 10000) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cff00FF00+" .. adj3 .. "g|r"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustBalance(name, adj3 * 10000) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = ""
-      info.disabled = true
-      info.notCheckable = true
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cffFF6666-" .. adj1 .. "g|r"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustBalance(name, -adj1 * 10000) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cffFF6666-" .. adj2 .. "g|r"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustBalance(name, -adj2 * 10000) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cffFF6666-" .. adj3 .. "g|r"
-      info.notCheckable = true
-      info.func = function() Boostilator:AdjustBalance(name, -adj3 * 10000) end
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = ""
-      info.disabled = true
-      info.notCheckable = true
-      UIDropDownMenu_AddButton(info, level)
-      
-      info = UIDropDownMenu_CreateInfo()
-      info.text = "|cffFFFFFFClear Balance|r"
-      info.notCheckable = true
-      info.func = function() 
-        local e = ensureBoostie(name)
-        e.balance = 0
-        Boostilator:RefreshUI()
       end
       UIDropDownMenu_AddButton(info, level)
     end
@@ -770,21 +876,24 @@ function Boostilator:RefreshSessionUI()
   local layout = (function()
     local width = (ui.sessionHeaders and ui.sessionHeaders:GetWidth()) or PANEL_WIDTH
     width = math.max(360, width)
-    local padding = 14
-    local nameWidth = math.max(180, math.floor(width * 0.45))
+    local padding = 10
+    local gap = 8  -- consistent gap between columns
+    local nameWidth = 120
     local runsWidth = 70
-    local used = padding + nameWidth + 14 + runsWidth + 14
-    local remaining = width - used - 60  -- leave space for status + hint
-    local balanceWidth = math.max(100, remaining)
-    local runsX = padding + nameWidth + 14
-    local balanceX = runsX + runsWidth + 14
+    local priceWidth = 60
+    local balanceWidth = 70
+    local runsX = padding + nameWidth + gap
+    local priceX = runsX + runsWidth + gap
+    local balanceX = priceX + priceWidth + gap
     return {
       width = width,
       padding = padding,
       nameWidth = nameWidth,
       runsWidth = runsWidth,
+      priceWidth = priceWidth,
       balanceWidth = balanceWidth,
       runsX = runsX,
+      priceX = priceX,
       balanceX = balanceX,
     }
   end)()
@@ -801,6 +910,11 @@ function Boostilator:RefreshSessionUI()
     h.runs:SetWidth(layout.runsWidth)
     h.runs:SetJustifyH("CENTER")
 
+    h.price:ClearAllPoints()
+    h.price:SetPoint("LEFT", ui.sessionHeaders, "LEFT", layout.priceX, 0)
+    h.price:SetWidth(layout.priceWidth)
+    h.price:SetJustifyH("CENTER")
+
     h.owes:ClearAllPoints()
     h.owes:SetPoint("LEFT", ui.sessionHeaders, "LEFT", layout.balanceX, 0)
     h.owes:SetWidth(layout.balanceWidth)
@@ -813,7 +927,8 @@ function Boostilator:RefreshSessionUI()
     for _, name in ipairs(members) do
       local e = db.boosties[name]
       if e then
-        totalOwed = totalOwed + (e.balance or 0)
+        local pricePerRun = e.pricePerRun or db.pricePerRun or 100000
+        totalOwed = totalOwed + ((e.runs or 0) * pricePerRun)
       end
     end
     ui.summaryText:SetText("|cffFFD700" .. #members .. "|r boosties  |  Total owed: " .. formatGold(totalOwed))
@@ -821,7 +936,7 @@ function Boostilator:RefreshSessionUI()
 
   for i = 1, #members do
     local name = members[i]
-    local entry = db.boosties[name] or { runs = 0, balance = 0 }
+    local entry = db.boosties[name] or { runs = 0, pricePerRun = nil }
     local row = ui.rows[i]
     
     if not row then
@@ -860,17 +975,16 @@ function Boostilator:RefreshSessionUI()
       row.nameText:SetJustifyH("LEFT")
 
       -- Runs
-      row.runsText = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
+      row.runsText = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
       row.runsText:SetJustifyH("CENTER")
+
+      -- Price per run
+      row.priceText = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+      row.priceText:SetJustifyH("CENTER")
 
       -- Balance
       row.balanceText = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
       row.balanceText:SetJustifyH("RIGHT")
-      
-      -- Status indicator
-      row.status = row:CreateTexture(nil, "ARTWORK")
-      row.status:SetSize(10, 10)
-      row.status:SetPoint("RIGHT", -46, 0)
       
       -- Right-click hint
       row.hint = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -886,11 +1000,12 @@ function Boostilator:RefreshSessionUI()
     row.runsText:ClearAllPoints()
     row.runsText:SetPoint("LEFT", layout.runsX, 0)
     row.runsText:SetWidth(layout.runsWidth)
+    row.priceText:ClearAllPoints()
+    row.priceText:SetPoint("LEFT", layout.priceX, 0)
+    row.priceText:SetWidth(layout.priceWidth)
     row.balanceText:ClearAllPoints()
     row.balanceText:SetPoint("LEFT", layout.balanceX, 0)
     row.balanceText:SetWidth(layout.balanceWidth)
-    row.status:ClearAllPoints()
-    row.status:SetPoint("RIGHT", row.hint, "LEFT", -10, 0)
 
     -- Update row data
     local level, classColor = getPlayerClassInfo(name)
@@ -912,19 +1027,22 @@ function Boostilator:RefreshSessionUI()
     end
     row.nameText:SetText(nameDisplay)
     row.runsText:SetText("|cffFFD700" .. (entry.runs or 0) .. " left|r")
-    row.balanceText:SetText(formatGold(entry.balance or 0))
     
-    -- Status color - subtle Blizzard tones
-    local bal = entry.balance or 0
-    if bal > 0 then
-      row.status:SetColorTexture(0.9, 0.25, 0.25, 1)  -- Red - owes money
-      row.bg:SetColorTexture(0.10, 0.06, 0.06, 0.78)
-    elseif bal < 0 then
-      row.status:SetColorTexture(0.25, 0.9, 0.25, 1)  -- Green - overpaid
-      row.bg:SetColorTexture(0.06, 0.10, 0.06, 0.78)
+    -- Price per run (default to global setting if not set)
+    local pricePerRun = entry.pricePerRun or db.pricePerRun or 100000
+    row.priceText:SetText("|cff888888" .. math.floor(pricePerRun / 10000) .. "g|r")
+    
+    -- Balance = runs * pricePerRun (auto-calculated)
+    local calculatedBalance = (entry.runs or 0) * pricePerRun
+    row.balanceText:SetText(formatGold(calculatedBalance))
+    
+    -- Row background color based on balance status
+    if calculatedBalance > 0 then
+      row.bg:SetColorTexture(0.10, 0.06, 0.06, 0.78)  -- Reddish - owes money
+    elseif calculatedBalance < 0 then
+      row.bg:SetColorTexture(0.06, 0.10, 0.06, 0.78)  -- Greenish - overpaid
     else
-      row.status:SetColorTexture(0.55, 0.5, 0.35, 1)  -- Neutral gold - settled
-      row.bg:SetColorTexture(0.06, 0.06, 0.06, 0.75)
+      row.bg:SetColorTexture(0.06, 0.06, 0.06, 0.75)  -- Neutral - settled
     end
     
     -- Click handler
@@ -935,12 +1053,15 @@ function Boostilator:RefreshSessionUI()
     end)
     
     -- Tooltip
+    local entryPrice = entry.pricePerRun or db.pricePerRun or 100000
+    local entryBalance = (entry.runs or 0) * entryPrice
     row:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
       GameTooltip:AddLine("|cffFFD700" .. name .. "|r")
       GameTooltip:AddLine(" ")
       GameTooltip:AddDoubleLine("Runs left:", tostring(entry.runs or 0), 1,1,1, 1,0.8,0)
-      GameTooltip:AddDoubleLine("Balance:", formatGold(entry.balance or 0), 1,1,1, 1,1,1)
+      GameTooltip:AddDoubleLine("Price/run:", math.floor(entryPrice / 10000) .. "g", 1,1,1, 0.6,0.6,0.6)
+      GameTooltip:AddDoubleLine("Balance:", formatGold(entryBalance), 1,1,1, 1,1,1)
       GameTooltip:AddLine(" ")
       GameTooltip:AddLine("|cff888888Right-click for options|r")
       GameTooltip:Show()
@@ -1112,9 +1233,34 @@ function Boostilator:RefreshClientsUI()
       GameTooltip:AddLine(" ")
       GameTooltip:AddDoubleLine("Total Runs:", tostring(cRuns), 1,1,1, 1,0.8,0)
       GameTooltip:AddDoubleLine("Total Gold:", formatGold(cGold), 1,1,1, 1,1,1)
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine("|cff888888Right-click to remove|r")
       GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    
+    -- Right-click to remove client
+    row:RegisterForClicks("RightButtonUp")
+    row:SetScript("OnClick", function(self, button)
+      if button == "RightButton" then
+        -- Show confirmation dialog
+        StaticPopupDialogs["BOOSTILATOR_REMOVE_CLIENT"] = {
+          text = "Remove |cffFFD700" .. cName .. "|r from All Clients?\n\nTotal: " .. cRuns .. " runs, " .. formatGold(cGold),
+          button1 = "Remove",
+          button2 = "Cancel",
+          OnAccept = function()
+            db.clients[cName] = nil
+            EasyLife:Print("|cffFF6666Removed " .. cName .. " from All Clients|r", "Boostilator")
+            Boostilator:RefreshUI()
+          end,
+          timeout = 0,
+          whileDead = true,
+          hideOnEscape = true,
+          preferredIndex = 3,
+        }
+        StaticPopup_Show("BOOSTILATOR_REMOVE_CLIENT")
+      end
+    end)
     
     row:Show()
   end
@@ -1172,6 +1318,25 @@ end
 function Boostilator:BuildConfigUI(parent)
   ensureDB()
   
+  -- Auto-scan party/raid members when UI opens
+  if IsInGroup() or IsInRaid() then
+    local db = getDB()
+    local members = getPartyMembers()
+    local added = 0
+    for _, name in ipairs(members) do
+      -- Only add if not in removed list and not already tracked
+      if not (db.removedBoosties and db.removedBoosties[name]) then
+        if not db.boosties[name] then
+          db.boosties[name] = { runs = 0, pricePerRun = nil }
+          added = added + 1
+        end
+      end
+    end
+    if added > 0 then
+      EasyLife:Print("|cff00FF00Auto-added|r " .. added .. " party member(s) to boostie list", "Boostilator")
+    end
+  end
+  
   -- Hide and clear ALL old rows before doing anything else
   if ui.rows then
     for _, row in ipairs(ui.rows) do
@@ -1228,13 +1393,13 @@ function Boostilator:BuildConfigUI(parent)
   title:SetPoint("TOP", 0, -8)
   title:SetText("|cffFFD700Boostilator|r")
   
-  -- Price display
-  local priceText = header:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  priceText:SetPoint("TOP", title, "BOTTOM", 0, -4)
+  -- Price display (stored in ui for updating when settings change)
+  ui.priceText = header:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  ui.priceText:SetPoint("TOP", title, "BOTTOM", 0, -4)
   local p1 = math.floor((db.pricePerRun or 100000) / 10000)
-  local p3 = math.floor((db.price3Runs or 270000) / 10000)
-  local p5 = math.floor((db.price5Runs or 400000) / 10000)
-  priceText:SetText("|cff888888x1:|r " .. p1 .. "g  |cff888888x3:|r " .. p3 .. "g  |cff888888x5:|r " .. p5 .. "g")
+  local p5 = math.floor((db.price5Runs or 450000) / 10000)
+  local p10 = math.floor((db.price10Runs or 800000) / 10000)
+  ui.priceText:SetText("|cff888888x1:|r " .. p1 .. "g  |cff888888x5:|r " .. p5 .. "g  |cff888888x10:|r " .. p10 .. "g")
   
   -- Settings button
   local settingsBtn = CreateFrame("Button", nil, header)
@@ -1259,7 +1424,7 @@ function Boostilator:BuildConfigUI(parent)
   local settings = _G["EasyLifeBoostilatorSettings"]
   if not settings then
     settings = CreateFrame("Frame", "EasyLifeBoostilatorSettings", UIParent, "BackdropTemplate")
-    settings:SetSize(340, 480)
+    settings:SetSize(340, 420)
     settings:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
     settings:SetFrameStrata("DIALOG")
     settings:SetFrameLevel(100)
@@ -1273,6 +1438,8 @@ function Boostilator:BuildConfigUI(parent)
     settings:SetBackdropBorderColor(1, 0.85, 0.3, 1)
     settings:SetMovable(true)
     settings:EnableMouse(true)
+    settings:EnableKeyboard(false)  -- Don't capture keyboard input
+    settings:SetPropagateKeyboardInput(true)  -- Let keyboard input pass through
     settings:RegisterForDrag("LeftButton")
     settings:SetScript("OnDragStart", settings.StartMoving)
     settings:SetScript("OnDragStop", settings.StopMovingOrSizing)
@@ -1309,63 +1476,38 @@ function Boostilator:BuildConfigUI(parent)
   end
   
   local input1 = makeInput("x1:", 15, -32, p1)
-  local input3 = makeInput("x3:", 15, -55, p3)
-  local input5 = makeInput("x5:", 105, -32, p5)
-  
-  -- Max runs input
-  local maxRunsLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  maxRunsLbl:SetPoint("TOPLEFT", 105, -55)
-  maxRunsLbl:SetText("Max:")
-  
-  local inputMax = CreateFrame("EditBox", nil, settings, "InputBoxTemplate")
-  inputMax:SetSize(30, 20)
-  inputMax:SetPoint("TOPLEFT", 140, -53)
-  inputMax:SetAutoFocus(false)
-  inputMax:SetNumeric(true)
-  inputMax:SetMaxLetters(2)
-  inputMax:SetText(tostring(db.maxRuns or 5))
-  inputMax:SetJustifyH("CENTER")
+  local input5 = makeInput("x5:", 115, -32, p5)
+  local input10 = makeInput("x10:", 215, -32, p10)
   
   -- Separator
   local sep = settings:CreateTexture(nil, "ARTWORK")
-  sep:SetSize(180, 1)
-  sep:SetPoint("TOP", 0, -78)
+  sep:SetSize(310, 1)
+  sep:SetPoint("TOP", 0, -58)
   sep:SetColorTexture(0.3, 0.3, 0.3, 0.8)
   
   -- Announce section title
   local announceLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  announceLbl:SetPoint("TOPLEFT", 15, -88)
+  announceLbl:SetPoint("TOPLEFT", 15, -68)
   announceLbl:SetText("|cffFFD700Announce Settings|r")
   
-  -- Announce enabled checkbox (custom without Chinese checkmark)
-  local announceCheck = CreateFrame("CheckButton", nil, settings)
-  announceCheck:SetSize(18, 18)
-  announceCheck:SetPoint("TOPLEFT", 15, -105)
-  announceCheck.bg = announceCheck:CreateTexture(nil, "BACKGROUND")
-  announceCheck.bg:SetAllPoints()
-  announceCheck.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-  announceCheck.check = announceCheck:CreateTexture(nil, "ARTWORK")
-  announceCheck.check:SetPoint("TOPLEFT", 3, -3)
-  announceCheck.check:SetPoint("BOTTOMRIGHT", -3, 3)
-  announceCheck.check:SetColorTexture(0, 0.8, 0, 1)
-  announceCheck.isChecked = db.announceEnabled or false
-  if announceCheck.isChecked then announceCheck.check:Show() else announceCheck.check:Hide() end
-  function announceCheck:SetChecked(val) self.isChecked = val; if val then self.check:Show() else self.check:Hide() end end
-  function announceCheck:GetChecked() return self.isChecked end
-  announceCheck:SetScript("OnClick", function(self) self.isChecked = not self.isChecked; if self.isChecked then self.check:Show() else self.check:Hide() end end)
+  -- Announce enabled checkbox (using UICheckButtonTemplate like Party/Raid)
+  local announceCheck = CreateFrame("CheckButton", nil, settings, "UICheckButtonTemplate")
+  announceCheck:SetSize(22, 22)
+  announceCheck:SetPoint("TOPLEFT", 15, -85)
+  announceCheck:SetChecked(db.announceEnabled or false)
   
   local announceCheckLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  announceCheckLbl:SetPoint("LEFT", announceCheck, "RIGHT", 4, 0)
+  announceCheckLbl:SetPoint("LEFT", announceCheck, "RIGHT", 2, 0)
   announceCheckLbl:SetText("Auto-announce on reset")
   
   -- Channel selection
   local channelLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  channelLbl:SetPoint("TOPLEFT", 15, -128)
+  channelLbl:SetPoint("TOPLEFT", 15, -108)
   channelLbl:SetText("Channel:")
   
   local partyBtn = CreateFrame("CheckButton", nil, settings, "UIRadioButtonTemplate")
   partyBtn:SetSize(20, 20)
-  partyBtn:SetPoint("TOPLEFT", 65, -125)
+  partyBtn:SetPoint("TOPLEFT", 65, -105)
   partyBtn:SetChecked((db.announceChannel or "PARTY") == "PARTY")
   
   local partyBtnLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -1374,7 +1516,7 @@ function Boostilator:BuildConfigUI(parent)
   
   local raidBtn = CreateFrame("CheckButton", nil, settings, "UIRadioButtonTemplate")
   raidBtn:SetSize(20, 20)
-  raidBtn:SetPoint("TOPLEFT", 130, -125)
+  raidBtn:SetPoint("TOPLEFT", 130, -105)
   raidBtn:SetChecked((db.announceChannel or "PARTY") == "RAID")
   
   local raidBtnLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -1391,41 +1533,30 @@ function Boostilator:BuildConfigUI(parent)
     partyBtn:SetChecked(false)
   end)
   
-  -- Whisper each boostie checkbox (custom without Chinese checkmark)
-  local whisperCheck = CreateFrame("CheckButton", nil, settings)
-  whisperCheck:SetSize(18, 18)
-  whisperCheck:SetPoint("TOPLEFT", 15, -145)
-  whisperCheck.bg = whisperCheck:CreateTexture(nil, "BACKGROUND")
-  whisperCheck.bg:SetAllPoints()
-  whisperCheck.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-  whisperCheck.check = whisperCheck:CreateTexture(nil, "ARTWORK")
-  whisperCheck.check:SetPoint("TOPLEFT", 3, -3)
-  whisperCheck.check:SetPoint("BOTTOMRIGHT", -3, 3)
-  whisperCheck.check:SetColorTexture(0, 0.8, 0, 1)
-  whisperCheck.isChecked = db.announceWhisper or false
-  if whisperCheck.isChecked then whisperCheck.check:Show() else whisperCheck.check:Hide() end
-  function whisperCheck:SetChecked(val) self.isChecked = val; if val then self.check:Show() else self.check:Hide() end end
-  function whisperCheck:GetChecked() return self.isChecked end
-  whisperCheck:SetScript("OnClick", function(self) self.isChecked = not self.isChecked; if self.isChecked then self.check:Show() else self.check:Hide() end end)
+  -- Whisper each boostie checkbox
+  local whisperCheck = CreateFrame("CheckButton", nil, settings, "UICheckButtonTemplate")
+  whisperCheck:SetSize(22, 22)
+  whisperCheck:SetPoint("TOPLEFT", 15, -122)
+  whisperCheck:SetChecked(db.announceWhisper or false)
   
   local whisperCheckLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  whisperCheckLbl:SetPoint("LEFT", whisperCheck, "RIGHT", 4, 0)
+  whisperCheckLbl:SetPoint("LEFT", whisperCheck, "RIGHT", 2, 0)
   whisperCheckLbl:SetText("Also whisper each boostie")
   
   -- Separator 2
   local sep2 = settings:CreateTexture(nil, "ARTWORK")
-  sep2:SetPoint("TOPLEFT", 10, -168)
+  sep2:SetPoint("TOPLEFT", 10, -148)
   sep2:SetSize(320, 1)
   sep2:SetColorTexture(0.3, 0.3, 0.3, 0.8)
   
   -- Announcement Templates section
   local templateLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  templateLbl:SetPoint("TOPLEFT", 15, -178)
+  templateLbl:SetPoint("TOPLEFT", 15, -158)
   templateLbl:SetText("|cffFFD700Announcement Templates|r")
   
   local templateHint = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  templateHint:SetPoint("TOPLEFT", 15, -192)
-  templateHint:SetText("|cff888888Use: {name}, {runs}, {max}|r")
+  templateHint:SetPoint("TOPLEFT", 15, -172)
+  templateHint:SetText("|cff888888Use: {name}, {runs}, {max} - All messages start with '[EasyLife]:'|r")
   
   -- Ensure templates exist in db
   db.announceTemplates = db.announceTemplates or {}
@@ -1443,77 +1574,29 @@ function Boostilator:BuildConfigUI(parent)
     lbl:SetWidth(90)
     lbl:SetJustifyH("LEFT")
     
-    local edit = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    -- Use InputBoxTemplate for proper text rendering/clearing behavior
+    local edit = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
     edit:SetSize(width or 210, 20)
     edit:SetPoint("TOPLEFT", 105, y + 2)
-    edit:SetBackdrop({
-      bgFile = "Interface\\Buttons\\WHITE8x8",
-      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-      edgeSize = 10,
-      insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    edit:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
-    edit:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
     edit:SetFontObject(GameFontHighlightSmall)
     edit:SetTextColor(1, 1, 1)
-    edit:SetTextInsets(4, 4, 0, 0)
     edit:SetAutoFocus(false)
     edit:SetMaxLetters(200)
     edit:SetText(db.announceTemplates[key] or "")
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    -- Fix text rendering when cursor moves or text changes
+    edit:SetScript("OnTextChanged", function(self)
+      self:SetCursorPosition(self:GetCursorPosition())
+    end)
     return edit
   end
   
-  local templateStarting = CreateTemplateEdit(settings, -210, "Starting", "runsStarting")
-  local templateRemaining = CreateTemplateEdit(settings, -235, "Remaining", "runsRemaining")
-  local templateDone = CreateTemplateEdit(settings, -260, "Done", "runsDone")
-  local templateFree = CreateTemplateEdit(settings, -285, "Free Run", "freeRun")
-  local templateCustom = CreateTemplateEdit(settings, -310, "Footer", "custom")
-  
-  -- Separator 3
-  local sep3 = settings:CreateTexture(nil, "ARTWORK")
-  sep3:SetPoint("TOPLEFT", 10, -338)
-  sep3:SetSize(320, 1)
-  sep3:SetColorTexture(0.3, 0.3, 0.3, 0.8)
-  
-  -- Balance Quick Adjust section
-  local balAdjLbl = settings:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  balAdjLbl:SetPoint("TOPLEFT", 15, -348)
-  balAdjLbl:SetText("|cffFFD700Balance Quick Adjust (gold)|r")
-  
-  -- Helper for small number inputs
-  local function CreateSmallInput(parent, x, y, width, value, labelText)
-    local lbl = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    lbl:SetPoint("TOPLEFT", x, y)
-    lbl:SetText(labelText)
-    
-    local edit = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    edit:SetSize(width, 18)
-    edit:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
-    edit:SetBackdrop({
-      bgFile = "Interface\\Buttons\\WHITE8x8",
-      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-      edgeSize = 8,
-      insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    edit:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
-    edit:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
-    edit:SetFontObject(GameFontHighlightSmall)
-    edit:SetTextColor(1, 1, 1)
-    edit:SetTextInsets(4, 4, 0, 0)
-    edit:SetAutoFocus(false)
-    edit:SetNumeric(true)
-    edit:SetMaxLetters(5)
-    edit:SetText(tostring(value or 0))
-    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    return edit
-  end
-  
-  local inputAdj1 = CreateSmallInput(settings, 15, -365, 40, db.balanceAdjust1 or 5, "Btn 1:")
-  local inputAdj2 = CreateSmallInput(settings, 115, -365, 40, db.balanceAdjust2 or 10, "Btn 2:")
-  local inputAdj3 = CreateSmallInput(settings, 215, -365, 40, db.balanceAdjust3 or 20, "Btn 3:")
+  local templateStarting = CreateTemplateEdit(settings, -190, "Starting", "runsStarting")
+  local templateRemaining = CreateTemplateEdit(settings, -215, "Remaining", "runsRemaining")
+  local templateDone = CreateTemplateEdit(settings, -240, "Done", "runsDone")
+  local templateFree = CreateTemplateEdit(settings, -265, "Free Run", "freeRun")
+  local templateCustom = CreateTemplateEdit(settings, -290, "Footer (opt)", "custom")
   
   local saveBtn = CreateFrame("Button", nil, settings, "UIPanelButtonTemplate")
   saveBtn:SetSize(80, 22)
@@ -1521,9 +1604,8 @@ function Boostilator:BuildConfigUI(parent)
   saveBtn:SetText("Save")
   saveBtn:SetScript("OnClick", function()
     db.pricePerRun = (tonumber(input1:GetText()) or 10) * 10000
-    db.price3Runs = (tonumber(input3:GetText()) or 27) * 10000
-    db.price5Runs = (tonumber(input5:GetText()) or 40) * 10000
-    db.maxRuns = tonumber(inputMax:GetText()) or 5
+    db.price5Runs = (tonumber(input5:GetText()) or 45) * 10000
+    db.price10Runs = (tonumber(input10:GetText()) or 80) * 10000
     db.announceEnabled = announceCheck:GetChecked()
     db.announceChannel = raidBtn:GetChecked() and "RAID" or "PARTY"
     db.announceWhisper = whisperCheck:GetChecked()
@@ -1534,15 +1616,14 @@ function Boostilator:BuildConfigUI(parent)
     db.announceTemplates.runsDone = templateDone:GetText()
     db.announceTemplates.freeRun = templateFree:GetText()
     db.announceTemplates.custom = templateCustom:GetText()
-    -- Save balance adjust amounts
-    db.balanceAdjust1 = tonumber(inputAdj1:GetText()) or 5
-    db.balanceAdjust2 = tonumber(inputAdj2:GetText()) or 10
-    db.balanceAdjust3 = tonumber(inputAdj3:GetText()) or 20
+    -- Update the price text in header
     local np1 = math.floor(db.pricePerRun / 10000)
-    local np3 = math.floor(db.price3Runs / 10000)
     local np5 = math.floor(db.price5Runs / 10000)
-    priceText:SetText("|cff888888x1:|r " .. np1 .. "g  |cff888888x3:|r " .. np3 .. "g  |cff888888x5:|r " .. np5 .. "g")
-    EasyLife:Print("|cff00FF00Settings saved!|r")
+    local np10 = math.floor(db.price10Runs / 10000)
+    if ui.priceText then
+      ui.priceText:SetText("|cff888888x1:|r " .. np1 .. "g  |cff888888x5:|r " .. np5 .. "g  |cff888888x10:|r " .. np10 .. "g")
+    end
+    EasyLife:Print("|cff00FF00Settings saved!|r", "Boostilator")
     settings:Hide()
   end)
   
@@ -1650,24 +1731,10 @@ function Boostilator:BuildConfigUI(parent)
   buttonBar:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
   buttonBar:SetBackdropBorderColor(0.5, 0.45, 0.25, 0.7)
   
-  -- Add boostie button (+)
-  local addBtn = CreateFrame("Button", nil, buttonBar, "UIPanelButtonTemplate")
-  addBtn:SetSize(26, 20)
-  addBtn:SetPoint("LEFT", 8, 0)
-  addBtn:SetText("+")
-  addBtn:SetScript("OnClick", function() Boostilator:ShowAddBoostieDialog() end)
-  addBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine("Add Boostie")
-    GameTooltip:AddLine("|cff888888Manually add a player to the list|r")
-    GameTooltip:Show()
-  end)
-  addBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  
-  -- Scan party button
+  -- Scan party button (now at left since + is removed - auto-add happens on party join)
   local scanBtn = CreateFrame("Button", nil, buttonBar, "UIPanelButtonTemplate")
   scanBtn:SetSize(52, 20)
-  scanBtn:SetPoint("LEFT", addBtn, "RIGHT", 4, 0)
+  scanBtn:SetPoint("LEFT", 8, 0)
   scanBtn:SetText("Scan")
   scanBtn:SetScript("OnClick", function() Boostilator:ScanPartyMembers() end)
   scanBtn:SetScript("OnEnter", function(self)
@@ -1682,7 +1749,7 @@ function Boostilator:BuildConfigUI(parent)
   local announceBtn = CreateFrame("Button", nil, buttonBar, "UIPanelButtonTemplate")
   announceBtn:SetSize(80, 20)
   announceBtn:SetPoint("LEFT", scanBtn, "RIGHT", 4, 0)
-  announceBtn:SetText("Announce ▼")
+  announceBtn:SetText("Announce")
   announceBtn:SetScript("OnClick", function(self) Boostilator:ShowAnnounceMenu(self) end)
   announceBtn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -1691,29 +1758,6 @@ function Boostilator:BuildConfigUI(parent)
     GameTooltip:Show()
   end)
   announceBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  
-  -- Refresh button
-  local refreshBtn = CreateFrame("Button", nil, buttonBar, "UIPanelButtonTemplate")
-  refreshBtn:SetSize(62, 20)
-  refreshBtn:SetPoint("RIGHT", -8, 0)
-  refreshBtn:SetText("Refresh")
-  refreshBtn:SetScript("OnClick", function(self, button)
-    if IsShiftKeyDown() then
-      -- Shift+click to restore all removed boosties
-      db.removedBoosties = {}
-      EasyLife:Print("|cff00FF00Restored all removed boosties|r")
-    end
-    Boostilator:RefreshUI()
-  end)
-  refreshBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine("Refresh")
-    GameTooltip:AddLine("|cff888888Click: Refresh list|r")
-    GameTooltip:AddLine("|cff888888Shift+Click: Restore removed boosties|r")
-    GameTooltip:Show()
-  end)
-  refreshBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  ui.refreshBtn = refreshBtn
   
   -- Session: Column headers
   ui.sessionHeaders = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -1732,10 +1776,12 @@ function Boostilator:BuildConfigUI(parent)
   ui.sessionHeaderLabels = {
     name = ui.sessionHeaders:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"),
     runs = ui.sessionHeaders:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"),
+    price = ui.sessionHeaders:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"),
     owes = ui.sessionHeaders:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"),
   }
   ui.sessionHeaderLabels.name:SetText("|cffD2B48CName|r")
   ui.sessionHeaderLabels.runs:SetText("|cffD2B48CRuns|r")
+  ui.sessionHeaderLabels.price:SetText("|cffD2B48CPrice|r")
   ui.sessionHeaderLabels.owes:SetText("|cffD2B48CBalance|r")
   
   -- Clients: Column headers - WoW themed
@@ -1782,7 +1828,6 @@ function Boostilator:AddRunToAll()
   local db = getDB()
   local members = getPartyMembers()
   local count = 0
-  local pricePerRun = db.pricePerRun or 100000
   for _, name in ipairs(members) do
     -- Skip players who were manually removed
     if db.removedBoosties and db.removedBoosties[name] then
@@ -1791,14 +1836,14 @@ function Boostilator:AddRunToAll()
       if db.boosties[name] and db.boosties[name].runs and db.boosties[name].runs > 0 then
         local entry = db.boosties[name]
         entry.runs = entry.runs - 1
-        -- Deduct the value of the completed run from their balance
-        entry.balance = (entry.balance or 0) - pricePerRun
+        -- Balance is auto-calculated, no need to update
+        if entry.runs == 0 then entry.pricePerRun = nil end
         count = count + 1
       end
     end
   end
   if count > 0 then
-    EasyLife:Print("|cffFFD700Run completed!|r Deducted 1 run from |cff00FF00" .. count .. "|r boosties")
+    EasyLife:Print("|cffFFD700Run completed!|r Deducted 1 run from |cff00FF00" .. count .. "|r boosties", "Boostilator")
     self:RefreshUI()
     -- Auto-announce if enabled
     if db.announceEnabled then
@@ -1816,7 +1861,7 @@ local function formatTemplate(template, name, runs, maxRuns)
   return msg
 end
 
--- Announce runs to party/raid with template type
+-- Announce runs to party/raid with template type (sends immediately)
 function Boostilator:AnnounceRuns(templateType)
   local db = getDB()
   local members = getPartyMembers()
@@ -1827,26 +1872,22 @@ function Boostilator:AnnounceRuns(templateType)
   -- Ensure templates exist
   db.announceTemplates = db.announceTemplates or DEFAULTS.announceTemplates
   local template = db.announceTemplates[templateType] or "{name} {runs}/{max}"
-  local customFooter = db.announceTemplates.custom or "EasyLife addon wishes you a good boost."
+  local customFooter = db.announceTemplates.custom or ""
   
   -- Check if we're in the right group type
   if channel == "RAID" and not IsInRaid() then
     channel = "PARTY"
   end
   if not IsInGroup() then
-    EasyLife:Print("|cffFF6666Not in a group!|r")
+    EasyLife:Print("|cffFF6666Not in a group!|r", "Boostilator")
     return
   end
   
-  -- Clear any existing queue
-  ClearMessageQueue()
-  
   -- Free run is a single message for everyone, no names
   if templateType == "freeRun" then
-    QueueMessage(function()
-      SendChatMessage(template, channel)
-    end)
-    EasyLife:Print("|cff00FF00[Free Run]|r Press any key or click to send announcement")
+    local msg = "[EasyLife]: " .. template
+    SendChatMessage(msg, channel)
+    EasyLife:Print("|cff00FF00[Free Run]|r Announced!", "Boostilator")
     return
   end
   
@@ -1868,23 +1909,28 @@ function Boostilator:AnnounceRuns(templateType)
   end
   
   if #parts == 0 then
-    EasyLife:Print("|cffFF6666No boosties to announce!|r")
+    EasyLife:Print("|cffFF6666No boosties to announce!|r", "Boostilator")
     return
   end
   
-  -- Queue each boostie message for party/raid
-  for _, part in ipairs(parts) do
-    local msg = part.msg
+  -- Send each boostie message immediately with EasyLife prefix
+  local messageDelay = 0
+  for i, part in ipairs(parts) do
+    local msg = "[EasyLife]: " .. part.msg
     local ch = channel
-    QueueMessage(function()
+    C_Timer.After(messageDelay, function()
       SendChatMessage(msg, ch)
     end)
+    messageDelay = messageDelay + 0.3  -- Small delay between messages to avoid spam
   end
   
-  -- Queue footer message
-  QueueMessage(function()
-    SendChatMessage(customFooter, channel)
-  end)
+  -- Send footer message if configured
+  if customFooter and customFooter ~= "" then
+    C_Timer.After(messageDelay, function()
+      SendChatMessage("[EasyLife]: " .. customFooter, channel)
+    end)
+    messageDelay = messageDelay + 0.3
+  end
   
   -- Also whisper each boostie if enabled
   if db.announceWhisper then
@@ -1892,26 +1938,27 @@ function Boostilator:AnnounceRuns(templateType)
       local entry = db.boosties[part.name]
       if entry then
         local runs = entry.runs or 0
-        local whisperMsg = "You have " .. runs .. "/" .. maxRuns .. " runs remaining."
+        local whisperMsg = "[EasyLife]: You have " .. runs .. "/" .. maxRuns .. " runs remaining."
         if entry.balance and entry.balance > 0 then
           whisperMsg = whisperMsg .. " Balance: " .. math.floor(entry.balance / 10000) .. "g"
         end
         local targetName = part.name
-        QueueMessage(function()
+        C_Timer.After(messageDelay, function()
           SendChatMessage(whisperMsg, "WHISPER", nil, targetName)
         end)
+        messageDelay = messageDelay + 0.3
       end
     end
   end
   
-  -- Show instruction to user
+  -- Show confirmation to user
   local typeNames = {
     runsStarting = "Starting",
     runsRemaining = "Remaining",
     runsDone = "Done",
   }
   local typeName = typeNames[templateType] or templateType
-  EasyLife:Print("|cff00FF00[" .. typeName .. "]|r Press any key or click to send " .. #parts .. " announcement(s)")
+  EasyLife:Print("|cff00FF00[" .. typeName .. "]|r Sent " .. #parts .. " announcement(s)!", "Boostilator")
 end
 
 -- Show announce dropdown menu
@@ -1932,25 +1979,44 @@ function Boostilator:ShowAnnounceMenu(anchorFrame)
     info = UIDropDownMenu_CreateInfo()
     info.text = "Runs Starting"
     info.notCheckable = true
-    info.func = function() Boostilator:AnnounceRuns("runsStarting") end
+    info.func = function() 
+      CloseDropDownMenus()
+      Boostilator:AnnounceRuns("runsStarting") 
+    end
     UIDropDownMenu_AddButton(info)
     
     info = UIDropDownMenu_CreateInfo()
     info.text = "Runs Remaining"
     info.notCheckable = true
-    info.func = function() Boostilator:AnnounceRuns("runsRemaining") end
+    info.func = function() 
+      CloseDropDownMenus()
+      Boostilator:AnnounceRuns("runsRemaining") 
+    end
     UIDropDownMenu_AddButton(info)
     
     info = UIDropDownMenu_CreateInfo()
     info.text = "Runs Done"
     info.notCheckable = true
-    info.func = function() Boostilator:AnnounceRuns("runsDone") end
+    info.func = function() 
+      CloseDropDownMenus()
+      Boostilator:AnnounceRuns("runsDone") 
+    end
     UIDropDownMenu_AddButton(info)
     
     info = UIDropDownMenu_CreateInfo()
     info.text = "|cff00FF00Free Run|r"
     info.notCheckable = true
-    info.func = function() Boostilator:AnnounceRuns("freeRun") end
+    info.func = function() 
+      CloseDropDownMenus()
+      Boostilator:AnnounceRuns("freeRun") 
+    end
+    UIDropDownMenu_AddButton(info)
+    
+    -- Cancel option
+    info = UIDropDownMenu_CreateInfo()
+    info.text = "|cff888888Cancel|r"
+    info.notCheckable = true
+    info.func = function() CloseDropDownMenus() end
     UIDropDownMenu_AddButton(info)
   end, "MENU")
   
@@ -2012,7 +2078,7 @@ function Boostilator:ShowResetConfirmDialog()
   noBtn:SetText("No")
   noBtn:SetScript("OnClick", function()
     dialog:Hide()
-    EasyLife:Print("|cff888888Run not counted.|r")
+    EasyLife:Print("|cff888888Run not counted.|r", "Boostilator")
   end)
   
   dialog:Show()
@@ -2024,12 +2090,24 @@ function Boostilator:OnEvent(event, ...)
     hideAllGlobalFrames()
     self:RefreshUI()
   elseif event == "GROUP_ROSTER_UPDATE" then
+    -- Auto-add new party/raid members when they join
+    local db = getDB()
+    if db.enabled then
+      local members = getPartyMembers()
+      for _, name in ipairs(members) do
+        -- Only add if not removed and not already in list
+        if not (db.removedBoosties and db.removedBoosties[name]) and not db.boosties[name] then
+          db.boosties[name] = { runs = 0, pricePerRun = nil }
+          EasyLife:Print("|cff00FF00Auto-added|r |cffFFFFFF" .. name .. "|r to boostie list", "Boostilator")
+        end
+      end
+    end
     self:RefreshUI()
   elseif event == "CHAT_MSG_SYSTEM" then
     local msg = ...
     -- DEBUG: Print all system messages to help identify reset patterns
     if msg and (msg:lower():find("reset") or msg:lower():find("instance") or msg:lower():find("dungeon")) then
-      EasyLife:Print("|cffFF00FF[DEBUG] System msg:|r " .. msg)
+      EasyLife:Print("|cffFF00FF[DEBUG] System msg:|r " .. msg, "Boostilator")
     end
     
     -- Detect instance reset messages (both success and failure)
@@ -2090,18 +2168,48 @@ function Boostilator:OnEvent(event, ...)
   end
 end
 
+-- Store event frame reference for UpdateState
+local boostEventFrame = nil
+
+-- Update module state (called when enabling/disabling from Module Manager)
+function Boostilator:UpdateState()
+  local db = getDB()
+  
+  if not db.enabled then
+    -- Disable: unregister trade events (keep roster update for data integrity)
+    if boostEventFrame then
+      boostEventFrame:UnregisterEvent("TRADE_SHOW")
+      boostEventFrame:UnregisterEvent("TRADE_MONEY_CHANGED")
+      boostEventFrame:UnregisterEvent("TRADE_ACCEPT_UPDATE")
+      boostEventFrame:UnregisterEvent("TRADE_CLOSED")
+      boostEventFrame:UnregisterEvent("TRADE_REQUEST_CANCEL")
+      boostEventFrame:UnregisterEvent("CHAT_MSG_SYSTEM")
+    end
+  else
+    -- Enable: register all trade events
+    if boostEventFrame then
+      boostEventFrame:RegisterEvent("TRADE_SHOW")
+      boostEventFrame:RegisterEvent("TRADE_MONEY_CHANGED")
+      boostEventFrame:RegisterEvent("TRADE_ACCEPT_UPDATE")
+      boostEventFrame:RegisterEvent("TRADE_CLOSED")
+      boostEventFrame:RegisterEvent("TRADE_REQUEST_CANCEL")
+      boostEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+    end
+  end
+end
+
 function Boostilator:OnRegister()
   ensureDB()
-  local frame = CreateFrame("Frame")
-  frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-  frame:RegisterEvent("GROUP_ROSTER_UPDATE")
-  frame:RegisterEvent("TRADE_SHOW")
-  frame:RegisterEvent("TRADE_MONEY_CHANGED")
-  frame:RegisterEvent("TRADE_ACCEPT_UPDATE")
-  frame:RegisterEvent("TRADE_CLOSED")
-  frame:RegisterEvent("TRADE_REQUEST_CANCEL")
-  frame:RegisterEvent("CHAT_MSG_SYSTEM")  -- For instance reset detection
-  frame:SetScript("OnEvent", function(_, event, ...)
+  boostEventFrame = CreateFrame("Frame")
+  boostEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  boostEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+  boostEventFrame:RegisterEvent("TRADE_SHOW")
+  boostEventFrame:RegisterEvent("TRADE_MONEY_CHANGED")
+  boostEventFrame:RegisterEvent("TRADE_ACCEPT_UPDATE")
+  boostEventFrame:RegisterEvent("TRADE_CLOSED")
+  boostEventFrame:RegisterEvent("TRADE_REQUEST_CANCEL")
+  boostEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")  -- For instance reset detection
+  boostEventFrame:SetScript("OnEvent", function(_, event, ...)
     Boostilator:OnEvent(event, ...)
   end)
 end

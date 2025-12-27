@@ -2,122 +2,89 @@
 
 ## Architecture Overview
 
-EasyLife is a modular World of Warcraft Classic Era (1.15.x) addon suite with a core-plus-satellite design:
+EasyLife is a modular World of Warcraft Classic Era (1.15.x) addon for boosting/dungeon carry helpers. Core-plus-module design with a single `EasyLifeDB` SavedVariables table.
 
-- **Core addon** (`EasyLife/`): Provides global `EasyLife` table, module registry, localization, config UI, and minimap button
-- **Satellite addons** (`EasyLife_*/`): Optional modules that depend on Core and register via `EasyLife:RegisterModule()`
-- **Bundled modules**: Advertiser, Boostilator, VendorTracker, IceBlockHelper, AggroAlert live inside Core but can be individually enabled via separate `.toc` stub addons
+**Load order**: `Core.lua` → `Locales.lua` → `Config.lua` → `Minimap.lua` → Module files (defined in `EasyLife.toc`)
 
-### Module Registration Pattern
+## Module Anatomy (Required Pattern)
 
-All modules must register with Core at file end:
+Every module follows this exact structure:
+
 ```lua
 local MyModule = {}
--- module implementation...
-EasyLife:RegisterModule("ModuleName", MyModule)
-```
 
-Standalone addons (like RangeIndicator, CastBarAura) conditionally register:
-```lua
-if EasyLife and EasyLife.RegisterModule then
-  EasyLife:RegisterModule(ADDON_NAME, mod)
-end
-```
-
-## Key Patterns
-
-### Database & Defaults
-
-Each module manages its own SavedVariables with this pattern:
-```lua
-local DEFAULTS = { enabled = false, x = 0, y = 0 }
+local DEFAULTS = { enabled = true, x = 0, y = 0 }
 
 local function ensureDB()
+  EasyLifeDB = EasyLifeDB or {}
   EasyLifeDB.myModule = EasyLifeDB.myModule or {}
   for k, v in pairs(DEFAULTS) do
-    if EasyLifeDB.myModule[k] == nil then
-      EasyLifeDB.myModule[k] = v
-    end
+    if EasyLifeDB.myModule[k] == nil then EasyLifeDB.myModule[k] = v end
   end
+  if EasyLifeDB.myModule._firstRunShown == nil then EasyLifeDB.myModule._firstRunShown = false end
 end
-```
 
-### Localization
+local function getDB() ensureDB() return EasyLifeDB.myModule end
 
-Use `EasyLife:L(key)` for all user-facing strings. Add new keys to both `L_enUS` and `L_trTR` tables in [Locales.lua](EasyLife/Locales.lua):
-```lua
-local function L(key) return EasyLife:L(key) end
-```
-
-### Config UI
-
-Modules expose settings via `BuildConfigUI(parent)` method. The parent is a content frame inside the main config window:
-```lua
-function MyModule:BuildConfigUI(parent)
-  -- Create controls as children of parent
-  local checkbox = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-  -- ...
-end
-```
-
-Optional cleanup method for floating UI elements:
-```lua
-function MyModule:CleanupUI()
-  -- Hide any floating frames created by this module
-end
-```
-
-### First-Run Welcome Popup
-
-Modules show a one-time welcome popup when opened for the first time. Use the centralized popup system in Core.lua:
-
-```lua
+-- REQUIRED: Config UI entry point
 function MyModule:BuildConfigUI(parent)
   local db = getDB()
-  
-  -- Show first-run popup if needed (at start of BuildConfigUI)
   if EasyLife:ShouldShowFirstRun(db) then
-    EasyLife:ShowFirstRunPopup("ModuleName", "TITLE_KEY", "DETAILED_CONTENT_KEY", db)
+    EasyLife:ShowFirstRunPopup("MyModule", "MY_TITLE", "MY_FIRST_RUN_DETAILED", db)
   end
-  
-  -- ... rest of config UI
+  -- Build UI controls as children of parent
 end
+
+-- REQUIRED: Called when module is enabled/disabled from Config
+function MyModule:UpdateState()
+  local db = getDB()
+  if db.enabled then self:Enable() else self:Disable() end
+end
+
+-- OPTIONAL: Hide floating UI when module disabled
+function MyModule:CleanupUI() end
+
+EasyLife:RegisterModule("MyModule", MyModule)  -- MUST be at file end
 ```
 
-**Required localization keys** (add to both L_enUS and L_trTR in Locales.lua):
-- `TITLE_KEY` - Module title (e.g., "AGGRO_TITLE")  
-- `DETAILED_CONTENT_KEY` - Multi-line detailed description (e.g., "AGGRO_FIRST_RUN_DETAILED")
+## Key Integration Points
 
-The popup includes:
-- Scrollable content area for detailed instructions
-- "Don't show this again" checkbox (checked by default)
-- "Got it!" button to dismiss
-- Sets `db._firstRunShown = true` when user clicks with checkbox checked
+| Method | When Called | Purpose |
+|--------|-------------|---------|
+| `BuildConfigUI(parent)` | User opens module config | Create settings controls |
+| `UpdateState()` | Enable/disable toggle in Module Manager | Start/stop event listeners |
+| `CleanupUI()` | Module disabled or switching modules | Hide floating frames |
 
-## File Organization
+## Localization (Mandatory)
 
-| Path | Purpose |
-|------|---------|
-| `Core.lua` | Global `EasyLife` table, module registry, slash commands |
-| `Locales.lua` | L_enUS/L_trTR tables, `EasyLife:L()` function |
-| `Config.lua` | Main config window, module selection sidebar |
-| `Minimap.lua` | Minimap button with dropdown menu |
-| `*.lua` | Individual module implementations |
-| `EasyLife_*/` | Stub addons that just include parent module via `..\EasyLife\*.lua` |
+Add ALL user-facing strings to both `L_enUS` and `L_trTR` tables in [Locales.lua](Locales.lua):
 
-## WoW API Considerations
+```lua
+local function L(key) return EasyLife:L(key) end  -- Local shorthand
+```
 
-- Target Interface: `11508` (Classic Era Anniversary)
-- Use `C_Timer.After()` / `C_Timer.NewTicker()` for timing
-- Use `BackdropTemplate` mixin for frames with backdrops
-- Prefer `CreateFrame("Frame", nil, parent, "BackdropTemplate")` pattern
-- Event handling: `frame:RegisterEvent()` + `frame:SetScript("OnEvent", handler)`
+Required keys per module: `*_TITLE`, `*_DESC`, `*_FIRST_RUN_DETAILED`
 
-## Adding a New Module
+## Adding a New Module (Checklist)
 
-1. Create `NewModule.lua` in `EasyLife/` with DEFAULTS, ensureDB, and module table
-2. Add to `EasyLife.toc` file list
-3. Add localization keys to [Locales.lua](EasyLife/Locales.lua)
-4. Add to `MODULE_LIST` in [Config.lua](EasyLife/Config.lua#L9)
-5. Register at file end: `EasyLife:RegisterModule("NewModule", NewModule)`
-6. Optionally create `EasyLife_NewModule/` stub addon for independent enable/disable
+1. Create `NewModule.lua` with DEFAULTS, ensureDB, getDB, BuildConfigUI, UpdateState
+2. Add to `EasyLife.toc` after `Minimap.lua`
+3. Add to `MODULE_LIST` in [Config.lua](Config.lua#L8) with name/key/descKey/firstRunKey
+4. Add to `MODULE_DB_KEYS` map in [Config.lua](Config.lua#L30) (module name → db key)
+5. Add localization keys to both language tables in Locales.lua
+6. Register at file end: `EasyLife:RegisterModule("Name", Module)`
+
+## WoW API Notes
+
+- Interface: `11508` (Classic Era Anniversary 1.15.x)
+- Timing: `C_Timer.After()` / `C_Timer.NewTicker()` (never `OnUpdate` unless needed)
+- Frames: `CreateFrame("Frame", nil, parent, "BackdropTemplate")` for bordered frames
+- Chat output: `EasyLife:Print(msg, "ModuleName")` creates clickable [EasyLife] link
+
+## Module Database Inconsistency (Historical)
+
+Some modules use different DB patterns due to evolution:
+- `Advertiser`, `Boostilator`, `VendorTracker`: Direct `EasyLifeDB.moduleName`
+- `AggroAlert`, `IceBlockHelper`: Via `EasyLife:GetDB().moduleName`
+
+Check `MODULE_USES_GLOBAL_DB` in Config.lua when syncing enabled states.

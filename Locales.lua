@@ -12,13 +12,63 @@ local L_enUS = {
   
   -- RangeIndicator
   RANGE_TITLE = "Range Indicator",
-  RANGE_UPDATE_RATE = "Update rate (sec)",
-  RANGE_SIZE = "Size",
+  RANGE_DESC = "Shows distance to closest mob and target",
+  RANGE_ENABLE = "Enable Range Indicator",
+  RANGE_SHOW_CLOSEST = "Show Closest Mob",
+  RANGE_SHOW_TARGET = "Show Target Distance",
+  RANGE_LOCKED = "Lock Position",
+  RANGE_UPDATE_MS = "Update Rate",
   RANGE_RESET = "Reset Position",
-  
+  RANGE_FIRST_RUN_DETAILED = [[|cffFFD700Welcome to Range Indicator!|r
+
+Track distances to mobs in real-time.
+
+|cff00FF00=== DISPLAY ===|r
+A compact frame shows:
+• Distance to your current target
+• Distance to the closest hostile mob
+
+|cff00FF00=== SETTINGS ===|r
+• Adjust update rate (lower = faster)
+• Toggle closest mob / target display
+• Lock/unlock frame position
+
+|cffAAAAAATip: Great for kiting and maintaining safe distance!|r]],
+
   -- CastBarAura
   CAST_TITLE = "CastBar Aura",
-  
+  CAST_DESC = "Shows incoming spell casts targeting you",
+  CAST_ENABLE = "Enable CastBar Aura",
+  CAST_SHOW_ICON = "Show Spell Icon",
+  CAST_PLAY_SOUND = "Play Warning Sound",
+  CAST_LOCKED = "Lock Position",
+  CAST_BAR_WIDTH = "Bar Width",
+  CAST_RESET = "Reset Position",
+  CAST_TEST = "Test Cast",
+  CAST_FIRST_RUN_DETAILED = [[|cffFFD700Welcome to CastBar Aura!|r
+
+See when mobs are casting spells on YOU.
+
+|cff00FF00=== HOW IT WORKS ===|r
+When an enemy starts casting a spell targeting you:
+• A cast bar appears showing the spell
+• Spell icon and caster name displayed
+• Timer counts down to cast completion
+• Bar flashes red when cast is almost done
+
+|cff00FF00=== ALERTS ===|r
+• Optional sound warning on cast start
+• Multiple simultaneous casts supported
+• Auto-removes when cast completes/interrupts
+
+|cff00FF00=== CUSTOMIZATION ===|r
+• Adjust bar width
+• Toggle spell icons
+• Enable/disable sound alerts
+• Lock frame position
+
+|cffAAAAAATip: Use this to know when to interrupt or avoid damage!|r]],
+
   -- Advertise
   ADS_TITLE = "Advertise",
   ADS_ENABLE = "Enable Advertiser",
@@ -210,13 +260,52 @@ local L_trTR = {
   
   -- RangeIndicator
   RANGE_TITLE = "Mesafe Gostergesi",
-  RANGE_UPDATE_RATE = "Guncelleme hizi (sn)",
-  RANGE_SIZE = "Boyut",
+  RANGE_DESC = "En yakin mob ve hedefe mesafeyi goster",
+  RANGE_ENABLE = "Mesafe Gostergesi Etkinlestir",
+  RANGE_SHOW_CLOSEST = "En Yakin Mobu Goster",
+  RANGE_SHOW_TARGET = "Hedef Mesafesini Goster",
+  RANGE_LOCKED = "Konumu Kilitle",
+  RANGE_UPDATE_MS = "Guncelleme Hizi",
   RANGE_RESET = "Pozisyonu Sifirla",
-  
+  RANGE_FIRST_RUN_DETAILED = [[|cffFFD700Mesafe Gostergesi'ne Hosgeldiniz!|r
+
+Moblara olan mesafeyi gercek zamanli takip edin.
+
+|cff00FF00=== GOSTERGE ===|r
+• Hedefinize olan mesafe
+• En yakin dusman moba mesafe
+
+|cff00FF00=== AYARLAR ===|r
+• Guncelleme hizi (dusuk = hizli)
+• En yakin mob / hedef gosterimi
+
+|cffAAAAAATip: Kiting icin harika!|r]],
+
   -- CastBarAura
   CAST_TITLE = "CastBar Aura",
-  
+  CAST_DESC = "Sizi hedef alan buyu atislarini goster",
+  CAST_ENABLE = "CastBar Aura Etkinlestir",
+  CAST_SHOW_ICON = "Buyu Ikonunu Goster",
+  CAST_PLAY_SOUND = "Uyari Sesi Cal",
+  CAST_LOCKED = "Konumu Kilitle",
+  CAST_BAR_WIDTH = "Bar Genisligi",
+  CAST_RESET = "Pozisyonu Sifirla",
+  CAST_TEST = "Test Et",
+  CAST_FIRST_RUN_DETAILED = [[|cffFFD700CastBar Aura'ya Hosgeldiniz!|r
+
+Dusmanlar size buyu atarken gorun.
+
+|cff00FF00=== NASIL CALISIR ===|r
+• Duman size buyu atarken bar gosterilir
+• Buyu ikonu ve atan ismi gosterilir
+• Zamanlayici tamamlanmaya sayar
+
+|cff00FF00=== UYARILAR ===|r
+• Opsiyonel ses uyarisi
+• Birden fazla buyu destegi
+
+|cffAAAAAATip: Interrupt zamanlamaniz icin kullanin!|r]],
+
   -- Advertise
   ADS_TITLE = "Reklam",
   ADS_ENABLE = "Reklamciyi Etkinlestir",

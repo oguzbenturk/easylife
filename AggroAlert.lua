@@ -366,7 +366,33 @@ eventFrame:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
 
 local inCombat = false
 
+-- Update module state (called when enabling/disabling from Module Manager)
+function AggroAlert:UpdateState()
+  local db = getDB()
+  
+  if not db.enabled then
+    -- Disable: hide alerts and unregister combat events
+    hideAggroAlert()
+    hideThreatWarning()
+    hasAggro = false
+    hasWarning = false
+    eventFrame:UnregisterEvent("PLAYER_REGEN_DISABLED")
+    eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    eventFrame:UnregisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+    eventFrame:UnregisterEvent("UNIT_THREAT_LIST_UPDATE")
+    eventFrame:SetScript("OnUpdate", nil)
+  else
+    -- Enable: register combat events
+    eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    eventFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+    eventFrame:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
+  end
+end
+
 eventFrame:SetScript("OnEvent", function(self, event, ...)
+  local db = getDB()
+  
   if event == "PLAYER_ENTERING_WORLD" then
     ensureDB()
     createAlertFrame()
@@ -375,6 +401,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     hideThreatWarning()
     
   elseif event == "PLAYER_REGEN_DISABLED" then
+    if not db.enabled then return end
     -- Entered combat
     inCombat = true
     eventFrame:SetScript("OnUpdate", onUpdate)
@@ -575,7 +602,7 @@ function AggroAlert:BuildConfigUI(parent)
     db.warningX = DEFAULTS.warningX
     db.warningY = DEFAULTS.warningY
     updateDisplaySettings()
-    EasyLife:Print("Aggro Alert positions reset!")
+    EasyLife:Print("Aggro Alert positions reset!", "AggroAlert")
   end)
 end
 

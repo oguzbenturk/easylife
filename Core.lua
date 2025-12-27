@@ -14,6 +14,8 @@ local DEFAULTS = {
     VendorTracker = true,
     IceBlockHelper = true,
     AggroAlert = true,
+    RangeIndicator = true,
+    CastBarAura = true,
   },
 }
 
@@ -63,8 +65,41 @@ function EasyLife:IsModuleLoaded(name)
   return self.modules[name] ~= nil
 end
 
-function EasyLife:Print(msg)
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99EasyLife|r: " .. tostring(msg))
+-- Create clickable [EasyLife] link for chat messages
+-- @param moduleName: Optional module name to open when clicked (e.g., "Advertiser", "Boostilator")
+function EasyLife:GetChatLink(moduleName)
+  local linkData = moduleName or "Config"
+  return "|cff33ff99|Haddon:EasyLife:" .. linkData .. "|h[EasyLife]|h|r"
+end
+
+-- Print message with clickable [EasyLife] prefix
+-- @param msg: The message to print
+-- @param moduleName: Optional module name to open when link is clicked
+function EasyLife:Print(msg, moduleName)
+  local link = self:GetChatLink(moduleName)
+  DEFAULT_CHAT_FRAME:AddMessage(link .. " " .. tostring(msg))
+end
+
+-- Hook to handle clicks on [EasyLife] links in chat
+local originalSetItemRef = SetItemRef
+SetItemRef = function(link, text, button, chatFrame)
+  if link and link:match("^addon:EasyLife:") then
+    local moduleName = link:match("^addon:EasyLife:(.+)$")
+    if moduleName then
+      -- Open the config window
+      if EasyLife_Config_Toggle then
+        EasyLife_Config_Toggle()
+      end
+      -- If a specific module was specified, try to select it
+      if moduleName ~= "Config" and EasyLife_Config_SelectModule then
+        C_Timer.After(0.05, function()
+          EasyLife_Config_SelectModule(moduleName)
+        end)
+      end
+    end
+    return
+  end
+  return originalSetItemRef(link, text, button, chatFrame)
 end
 
 --------------------------------------------------------------------------------

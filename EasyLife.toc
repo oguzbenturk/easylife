@@ -15,3 +15,5 @@ AggroAlert.lua
 Boostilator.lua
 IceBlockHelper.lua
 VendorTracker.lua
+RangeIndicator.lua
+CastBarAura.lua

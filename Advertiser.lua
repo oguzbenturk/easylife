@@ -35,6 +35,7 @@ local DEFAULTS = {
     autoReplyEnabled = false,
     autoReplyRules = {},
     autoReplyCooldown = 10,
+    autoReplyDelay = 1,  -- Delay before sending reply (seconds)
 }
 
 local state = {
@@ -48,6 +49,9 @@ local state = {
     -- Queue system
     messageQueued = false,
     queuedAt = 0,
+    -- Auto-invite tracking
+    declinedPlayers = {},  -- Players who declined or are in another group
+    pendingInvites = {},   -- Players we're trying to invite (with keyword info)
 }
 
 local floatingButton = nil
@@ -238,7 +242,7 @@ function Advertiser:CreateFloatingButton()
         elseif not state.onCooldown then
             Advertiser:SendAd()
         else
-            EasyLife:Print("|cffFF6600On cooldown:|r " .. Advertiser:GetCooldownRemaining() .. "s")
+            EasyLife:Print("|cffFF6600On cooldown:|r " .. Advertiser:GetCooldownRemaining() .. "s", "Advertiser")
         end
     end)
     
@@ -324,18 +328,18 @@ function Advertiser:SendAd()
     local db = getDB()
     
     if not db.enabled then
-        EasyLife:Print("|cffFF6666Advertiser is stopped|r")
+        EasyLife:Print("|cffFF6666Advertiser is stopped|r", "Advertiser")
         return false
     end
     
     if state.onCooldown then
-        EasyLife:Print("|cffFF6600On cooldown:|r " .. self:GetCooldownRemaining() .. "s")
+        EasyLife:Print("|cffFF6600On cooldown:|r " .. self:GetCooldownRemaining() .. "s", "Advertiser")
         return false
     end
     
     local msg = trim(db.adMessage)
     if msg == "" then
-        EasyLife:Print("|cffFF6600No message configured|r")
+        EasyLife:Print("|cffFF6600No message configured|r", "Advertiser")
         return false
     end
     
@@ -346,7 +350,7 @@ function Advertiser:SendAd()
     end
     
     if #targets == 0 then
-        EasyLife:Print("|cffFF6600No channels selected|r")
+        EasyLife:Print("|cffFF6600No channels selected|r", "Advertiser")
         return false
     end
     
@@ -375,10 +379,10 @@ function Advertiser:SendAd()
         self:EnableAnyKeyDetection(false)
         self:StartCooldown()
         self:UpdateFloatingButton()
-        EasyLife:Print("|cff00FF00Ad sent|r to " .. sent .. " channel(s)")
+        EasyLife:Print("|cff00FF00Ad sent|r to " .. sent .. " channel(s)", "Advertiser")
         return true
     else
-        EasyLife:Print("|cffFF6600No valid channels found|r")
+        EasyLife:Print("|cffFF6600No valid channels found|r", "Advertiser")
         return false
     end
 end
@@ -402,11 +406,14 @@ function Advertiser:StartAutoSend()
         autoSendTimer = nil
     end
     
-    if not db.autoSendEnabled or not db.enabled then return end
+    if not db.enabled then return end
+    
+    -- Auto-enable when starting
+    db.autoSendEnabled = true
     
     local msg = trim(db.adMessage)
     if msg == "" then
-        EasyLife:Print("|cffFF6600[Auto-Send]|r No message configured")
+        EasyLife:Print("|cffFF6600[Auto-Send]|r No message configured", "Advertiser")
         return
     end
     
@@ -415,7 +422,7 @@ function Advertiser:StartAutoSend()
         if enabled then hasTargets = true; break end
     end
     if not hasTargets then
-        EasyLife:Print("|cffFF6600[Auto-Send]|r No channels selected")
+        EasyLife:Print("|cffFF6600[Auto-Send]|r No channels selected", "Advertiser")
         return
     end
     
@@ -426,10 +433,10 @@ function Advertiser:StartAutoSend()
     
     -- Send first message IMMEDIATELY (not queued - direct send)
     if not state.onCooldown then
-        EasyLife:Print("|cff00FF00[Auto-Send]|r Sending first message now...")
+        EasyLife:Print("|cff00FF00[Auto-Send]|r Sending first message now...", "Advertiser")
         self:SendAd()
     else
-        EasyLife:Print("|cffFFD700[Auto-Send]|r On cooldown, will queue when ready")
+        EasyLife:Print("|cffFFD700[Auto-Send]|r On cooldown, will queue when ready", "Advertiser")
     end
     
     -- Then queue subsequent messages on interval
@@ -445,7 +452,7 @@ function Advertiser:StartAutoSend()
         end
     end)
     
-    EasyLife:Print("|cff00FF00[Auto-Send]|r Started - will queue every " .. interval .. "s after cooldown")
+    EasyLife:Print("|cff00FF00[Auto-Send]|r Started - will queue every " .. interval .. "s after cooldown", "Advertiser")
 end
 
 function Advertiser:StopAutoSend()
@@ -456,10 +463,12 @@ function Advertiser:StopAutoSend()
     self.autoSendRunning = false
     state.messageQueued = false
     state.queuedAt = nil
+    -- Disable auto-send flag
+    getDB().autoSendEnabled = false
     -- Disable any-key detection
     self:EnableAnyKeyDetection(false)
     self:UpdateFloatingButton()
-    EasyLife:Print("|cffFF6600[Auto-Send]|r Stopped")
+    EasyLife:Print("|cffFF6600[Auto-Send]|r Stopped", "Advertiser")
 end
 
 -- Queue a message (sets flag, button will glow)
@@ -488,7 +497,7 @@ function Advertiser:QueueAutoMessage()
     -- Play sound to alert user
     PlaySound(SOUNDKIT.TELL_MESSAGE)
     
-    EasyLife:Print("|cffFFD700[Auto]|r Message ready - |cff00FF00press ANY key|r or |cff00FF00click|r to send!")
+    EasyLife:Print("|cffFFD700[Auto]|r Message ready - |cff00FF00press ANY key|r or |cff00FF00click|r to send!", "Advertiser")
 end
 
 --------------------------------------------------------------------------------
@@ -584,7 +593,7 @@ function Advertiser:SetupKeybind()
                 elseif not state.onCooldown then
                     Advertiser:SendAd()
                 else
-                    EasyLife:Print("|cffFF6600On cooldown:|r " .. Advertiser:GetCooldownRemaining() .. "s")
+                    EasyLife:Print("|cffFF6600On cooldown:|r " .. Advertiser:GetCooldownRemaining() .. "s", "Advertiser")
                 end
                 C_Timer.After(0.1, function()
                     if keybindFrame then
@@ -617,9 +626,28 @@ function Advertiser:CheckAutoInvite(sender, message, chatType, channelName)
     
     -- Check channel filter
     if chatType == "CHANNEL" and channelName then
+        -- Clean channel name (remove number prefix if present, and zone suffix)
         local clean = channelName:match("^%d+%.%s*(.+)") or channelName
+        -- Also try to match without zone suffix (e.g., "General - Orgrimmar" -> "General")
+        local baseChannel = clean:match("^([^%-]+)") or clean
+        baseChannel = baseChannel:gsub("%s+$", "")  -- Trim trailing spaces
+        
         if db.monitoredChannels and next(db.monitoredChannels) then
-            if not db.monitoredChannels[clean] then return end
+            local found = false
+            -- Check both exact match and base channel match (case-insensitive)
+            for monitoredName, enabled in pairs(db.monitoredChannels) do
+                if enabled then
+                    local lowerMonitored = monitoredName:lower()
+                    local lowerClean = clean:lower()
+                    local lowerBase = baseChannel:lower()
+                    if lowerClean == lowerMonitored or lowerBase == lowerMonitored or 
+                       lowerClean:find(lowerMonitored, 1, true) or lowerMonitored:find(lowerBase, 1, true) then
+                        found = true
+                        break
+                    end
+                end
+            end
+            if not found then return end
         end
     end
     
@@ -627,6 +655,10 @@ function Advertiser:CheckAutoInvite(sender, message, chatType, channelName)
     local lowerMsg = message:lower()
     for _, keyword in ipairs(keywords) do
         if keyword and keyword ~= "" and lowerMsg:find(keyword:lower(), 1, true) then
+            -- If player whispers with a keyword, clear their declined status so they can be re-invited
+            if chatType == "WHISPER" and state.declinedPlayers then
+                state.declinedPlayers[sender] = nil
+            end
             self:InvitePlayer(sender, keyword)
             return
         end
@@ -635,8 +667,20 @@ end
 
 function Advertiser:InvitePlayer(player, keyword)
     local now = GetTime()
-    if state.invitedPlayers[player] and (now - state.invitedPlayers[player]) < 60 then
-        return -- Already invited recently
+    
+    -- Don't invite if player has declined or is in another group
+    if state.declinedPlayers and state.declinedPlayers[player] then
+        return
+    end
+    
+    -- Don't invite if player is already in our group
+    if UnitInParty(player) or UnitInRaid(player) then
+        return
+    end
+    
+    -- Cooldown between invite attempts (5 seconds to avoid spam)
+    if state.invitedPlayers[player] and (now - state.invitedPlayers[player]) < 5 then
+        return
     end
     
     state.invitedPlayers[player] = now
@@ -644,9 +688,45 @@ function Advertiser:InvitePlayer(player, keyword)
     
     local delay = math.max(0, getDB().autoInviteDelay or 0.5)
     C_Timer.After(delay, function()
+        -- Double-check they haven't joined or declined in the meantime
+        if state.declinedPlayers and state.declinedPlayers[player] then return end
+        if UnitInParty(player) or UnitInRaid(player) then return end
+        
         InviteUnit(player)
-        EasyLife:Print("|cff00FF00[Invite]|r " .. player .. " (matched: " .. keyword .. ")")
+        EasyLife:Print("|cff00FF00[Invite]|r " .. player .. " (matched: " .. keyword .. ")", "Advertiser")
     end)
+end
+
+-- Handle system messages to detect declined invites or players already in groups
+function Advertiser:OnSystemMessage(message)
+    if not message then return end
+    
+    -- Patterns for declined/unavailable invites (English)
+    -- "%s declines your group invitation."
+    -- "%s is already in a group."
+    -- "No player named '%s' is currently playing."
+    
+    local declined = message:match("(.+) declines? your group invitation")
+    local alreadyInGroup = message:match("(.+) is already in a group")
+    local notPlaying = message:match("No player named '(.+)' is currently playing")
+    
+    local playerName = declined or alreadyInGroup or notPlaying
+    if playerName then
+        state.declinedPlayers = state.declinedPlayers or {}
+        state.declinedPlayers[playerName] = true
+        -- Clear from invite cooldown so they can be re-invited if they whisper again later
+        if state.invitedPlayers then
+            state.invitedPlayers[playerName] = nil
+        end
+    end
+    
+    -- Check if someone joined the group - clear their declined status
+    local joined = message:match("(.+) joins the party")
+    if joined then
+        if state.declinedPlayers then
+            state.declinedPlayers[joined] = nil
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -668,6 +748,8 @@ function Advertiser:CheckAutoReply(sender, message)
     
     local lowerMsg = message:lower()
     
+    local delay = db.autoReplyDelay or 1
+    
     for _, rule in ipairs(db.autoReplyRules) do
         if rule.enabled and rule.keywords and rule.response and rule.response ~= "" then
             for keyword in rule.keywords:gmatch("[^,]+") do
@@ -675,8 +757,13 @@ function Advertiser:CheckAutoReply(sender, message)
                 if keyword ~= "" and lowerMsg:find(keyword:lower(), 1, true) then
                     state.replyCooldowns[sender] = now
                     state.repliesSent = state.repliesSent + 1
-                    SendChatMessage(rule.response, "WHISPER", nil, sender)
-                    EasyLife:Print("|cff00FFFF[Reply]|r to " .. sender .. " (matched: " .. keyword .. ")")
+                    -- Apply delay before sending reply
+                    local response = rule.response
+                    local matchedKeyword = keyword
+                    C_Timer.After(delay, function()
+                        SendChatMessage(response, "WHISPER", nil, sender)
+                        EasyLife:Print("|cff00FFFF[Reply]|r to " .. sender .. " (matched: " .. matchedKeyword .. ")", "Advertiser")
+                    end)
                     return
                 end
             end
@@ -691,6 +778,12 @@ end
 function Advertiser:OnEvent(event, message, sender, _, _, _, _, _, _, channelName)
     local db = getDB()
     if not db.enabled then return end
+    
+    -- Handle system messages for invite tracking
+    if event == "CHAT_MSG_SYSTEM" then
+        self:OnSystemMessage(message)
+        return
+    end
     
     local cleanSender = sender:match("([^%-]+)") or sender
     if cleanSender == UnitName("player") then return end
@@ -727,6 +820,7 @@ function Advertiser:UpdateState()
     end
     if db.autoInvite then
         self.frame:RegisterEvent("CHAT_MSG_CHANNEL")
+        self.frame:RegisterEvent("CHAT_MSG_SYSTEM")  -- For tracking invite declines
     end
     
     self:UpdateFloatingButton()
@@ -905,7 +999,7 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
                 table.remove(keywords, i)
                 db[dbKey] = keywords
                 RefreshList()
-                EasyLife:Print("|cffFF6600Removed keyword:|r " .. keyword)
+                EasyLife:Print("|cffFF6600Removed keyword:|r " .. keyword, "Advertiser")
             end)
             row:Show()
             
@@ -925,14 +1019,14 @@ local function CreateKeywordList(parent, x, y, title, keywordTable, dbKey, width
             -- Check for duplicates
             for _, existing in ipairs(db[dbKey]) do
                 if existing:lower() == keyword:lower() then
-                    EasyLife:Print("|cffFF6600Keyword already exists:|r " .. keyword)
+                    EasyLife:Print("|cffFF6600Keyword already exists:|r " .. keyword, "Advertiser")
                     return
                 end
             end
             table.insert(db[dbKey], keyword)
             addEdit:SetText("")
             RefreshList()
-            EasyLife:Print("|cff00FF00[Auto-Invite]|r Added keyword: |cffFFD700" .. keyword .. "|r")
+            EasyLife:Print("|cff00FF00[Auto-Invite]|r Added keyword: |cffFFD700" .. keyword .. "|r", "Advertiser")
         end
     end
     
@@ -1001,12 +1095,12 @@ local function BuildAutoInviteTab(content, db)
             toggleBtn:SetText("Start")
             toggleBtn:Disable()
         elseif d.autoInvite then
-            statusText:SetText("|cff00FF00● Listening|r")
+            statusText:SetText("|cff00FF00Listening|r")
             header:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
             toggleBtn:SetText("Disable")
             toggleBtn:Enable()
         else
-            statusText:SetText("|cff888888● Disabled|r")
+            statusText:SetText("|cff888888Disabled|r")
             header:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
             toggleBtn:SetText("Enable")
             toggleBtn:Enable()
@@ -1020,9 +1114,9 @@ local function BuildAutoInviteTab(content, db)
         Advertiser:UpdateState()
         RefreshHeader()
         if d.autoInvite then
-            EasyLife:Print("|cff00FF00[Auto-Invite]|r Enabled - listening for keywords")
+            EasyLife:Print("|cff00FF00[Auto-Invite]|r Enabled - listening for keywords", "Advertiser")
         else
-            EasyLife:Print("|cffFF6600[Auto-Invite]|r Disabled")
+            EasyLife:Print("|cffFF6600[Auto-Invite]|r Disabled", "Advertiser")
         end
     end)
     
@@ -1283,18 +1377,10 @@ local function BuildSendMessageTab(content, db)
     autoHeader:SetPoint("TOPLEFT", 8, -6)
     autoHeader:SetText("|cffFFD700Auto-Send|r")
     
-    -- Auto-send checkbox
-    local autoSendCb = CreateCheckbox(autoBox, 8, -24, "Enable", db.autoSendEnabled, function(self)
-        local d = getDB()
-        d.autoSendEnabled = self:GetChecked()
-        RefreshHeader()
-    end)
-    autoSendCb.text:SetTextColor(0.3, 1, 0.3)
-    
-    -- Start/Stop button
+    -- Start/Stop button (directly starts/stops auto-send)
     local autoStartBtn = CreateFrame("Button", nil, autoBox, "UIPanelButtonTemplate")
     autoStartBtn:SetSize(70, 20)
-    autoStartBtn:SetPoint("TOPLEFT", 90, -22)
+    autoStartBtn:SetPoint("TOPLEFT", 8, -24)
     
     local function UpdateAutoStartButton()
         if Advertiser.autoSendRunning then
@@ -1305,15 +1391,10 @@ local function BuildSendMessageTab(content, db)
     end
     
     autoStartBtn:SetScript("OnClick", function()
-        local d = getDB()
         if Advertiser.autoSendRunning then
             Advertiser:StopAutoSend()
         else
-            if d.autoSendEnabled then
-                Advertiser:StartAutoSend()
-            else
-                EasyLife:Print("|cffFF6600[Auto-Send]|r Enable checkbox first!")
-            end
+            Advertiser:StartAutoSend()
         end
         UpdateAutoStartButton()
         RefreshHeader()
@@ -1321,8 +1402,8 @@ local function BuildSendMessageTab(content, db)
     UpdateAutoStartButton()
     
     local autoDesc = autoBox:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    autoDesc:SetPoint("TOPLEFT", 165, -26)
-    autoDesc:SetWidth(W - 165)
+    autoDesc:SetPoint("TOPLEFT", 90, -28)
+    autoDesc:SetWidth(W - 90)
     autoDesc:SetJustifyH("LEFT")
     autoDesc:SetText("|cff888888Press any key to send queued msg|r")
     
@@ -1507,12 +1588,12 @@ local function BuildAutoReplyTab(content, db)
             toggleBtn:SetText("Start")
             toggleBtn:Disable()
         elseif d.autoReplyEnabled then
-            statusText:SetText("|cff00FF00● Listening|r")
+            statusText:SetText("|cff00FF00Listening|r")
             header:SetBackdropBorderColor(0.2, 0.5, 0.2, 0.8)
             toggleBtn:SetText("Disable")
             toggleBtn:Enable()
         else
-            statusText:SetText("|cff888888● Disabled|r")
+            statusText:SetText("|cff888888Disabled|r")
             header:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
             toggleBtn:SetText("Enable")
             toggleBtn:Enable()
@@ -1526,9 +1607,9 @@ local function BuildAutoReplyTab(content, db)
         Advertiser:UpdateState()
         RefreshHeader()
         if d.autoReplyEnabled then
-            EasyLife:Print("|cff00FF00[Auto-Reply]|r Enabled - will respond to keyword whispers")
+            EasyLife:Print("|cff00FF00[Auto-Reply]|r Enabled - will respond to keyword whispers", "Advertiser")
         else
-            EasyLife:Print("|cffFF6600[Auto-Reply]|r Disabled")
+            EasyLife:Print("|cffFF6600[Auto-Reply]|r Disabled", "Advertiser")
         end
     end)
     
@@ -1544,6 +1625,17 @@ local function BuildAutoReplyTab(content, db)
     -- ═══════════════════════════════════════════════════════════════════════
     -- SETTINGS
     -- ═══════════════════════════════════════════════════════════════════════
+    
+    -- Reply delay
+    local delayLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    delayLabel:SetPoint("TOPLEFT", 4, y)
+    delayLabel:SetText("Reply delay (sec):")
+    
+    local _, delayEdit = CreateNumberBox(container, 130, y - 2, 50, db.autoReplyDelay)
+    delayEdit:SetScript("OnTextChanged", function(self)
+        getDB().autoReplyDelay = math.max(0, tonumber(self:GetText()) or 1)
+    end)
+    y = y - 28
     
     -- Cooldown
     local cdLabel = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")

@@ -354,14 +354,37 @@ function IceBlockHelper:BuildConfigUI(parent)
   instructions:SetText("|cffFFFF00How to use:|r\n\n1. When you Ice Block with mobs hitting you, this bar appears\n2. The white line moves from left to right\n3. |cffFF0000RED zone|r = mobs about to attack, DON'T cancel\n4. |cff00FF00GREEN zone|r = safe window, CANCEL now!\n5. The addon learns mob attack speed as they hit you")
 end
 
+-- Store event frame reference for UpdateState
+local iceBlockEventFrame = nil
+
+-- Update module state (called when enabling/disabling from Module Manager)
+function IceBlockHelper:UpdateState()
+  local db = getDB()
+  
+  if not db.enabled then
+    -- Disable: hide display and unregister events
+    self:Hide()
+    if iceBlockEventFrame then
+      iceBlockEventFrame:UnregisterEvent("UNIT_AURA")
+      iceBlockEventFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+  else
+    -- Enable: register events
+    if iceBlockEventFrame then
+      iceBlockEventFrame:RegisterEvent("UNIT_AURA")
+      iceBlockEventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+  end
+end
+
 -- Initialize
 function IceBlockHelper:OnRegister()
-  local eventFrame = CreateFrame("Frame")
-  eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-  eventFrame:RegisterEvent("UNIT_AURA")
-  eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+  iceBlockEventFrame = CreateFrame("Frame")
+  iceBlockEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  iceBlockEventFrame:RegisterEvent("UNIT_AURA")
+  iceBlockEventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
   
-  eventFrame:SetScript("OnEvent", function(self, event, ...)
+  iceBlockEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
       ensureDB()
     elseif event == "UNIT_AURA" then
@@ -382,7 +405,10 @@ function IceBlockHelper:OnRegister()
         end
       end
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-      onCombatLogEvent()
+      local db = getDB()
+      if db.enabled then
+        onCombatLogEvent()
+      end
     end
   end)
   

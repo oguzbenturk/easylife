@@ -11,6 +11,8 @@ local MODULE_LIST = {
   { name = "VendorTracker", key = "VENDOR_TITLE", descKey = "VENDOR_DESC", firstRunKey = "VENDOR_FIRST_RUN_DETAILED" },
   { name = "IceBlockHelper", key = "ICEBLOCK_TITLE", descKey = "ICEBLOCK_DESC", firstRunKey = "ICEBLOCK_FIRST_RUN_DETAILED" },
   { name = "AggroAlert", key = "AGGRO_TITLE", descKey = "AGGRO_DESC", firstRunKey = "AGGRO_FIRST_RUN_DETAILED" },
+  { name = "RangeIndicator", key = "RANGE_TITLE", descKey = "RANGE_DESC", firstRunKey = "RANGE_FIRST_RUN_DETAILED" },
+  { name = "CastBarAura", key = "CAST_TITLE", descKey = "CAST_DESC", firstRunKey = "CAST_FIRST_RUN_DETAILED" },
 }
 
 local function L(key)
@@ -24,11 +26,136 @@ local function isModuleEnabled(name)
   return db.enabledModules[name] == true
 end
 
+-- Map module names to their database keys
+local MODULE_DB_KEYS = {
+  Advertise = "Advertiser",
+  Boostilator = "boostilator",
+  VendorTracker = "vendorTracker",
+  IceBlockHelper = "iceBlockHelper",
+  AggroAlert = "aggroAlert",
+  RangeIndicator = "rangeIndicator",
+  CastBarAura = "castBarAura",
+}
+
+-- Some modules use EasyLifeDB directly, others use EasyLife:GetDB()
+local MODULE_USES_GLOBAL_DB = {
+  Advertise = true,
+  Boostilator = true,
+  VendorTracker = true,
+}
+
 local function setModuleEnabled(name, enabled)
   local db = EasyLife:GetDB()
   db.enabledModules = db.enabledModules or {}
   db.enabledModules[name] = enabled
+  
+  -- Also sync the module's internal enabled state
+  local moduleDBKey = MODULE_DB_KEYS[name]
+  if moduleDBKey then
+    -- Some modules use EasyLifeDB directly, others use EasyLife:GetDB()
+    if MODULE_USES_GLOBAL_DB[name] then
+      EasyLifeDB = EasyLifeDB or {}
+      EasyLifeDB[moduleDBKey] = EasyLifeDB[moduleDBKey] or {}
+      EasyLifeDB[moduleDBKey].enabled = enabled
+    else
+      db[moduleDBKey] = db[moduleDBKey] or {}
+      db[moduleDBKey].enabled = enabled
+    end
+    -- If module has an UpdateState function, call it to apply changes
+    local mod = EasyLife:GetModule(name)
+    if mod and mod.UpdateState then
+      mod:UpdateState()
+    end
+    -- If module has a CleanupUI function, call it when disabling
+    if not enabled and mod and mod.CleanupUI then
+      mod:CleanupUI()
+    end
+  end
+  
+  -- Close module settings window if this module is currently open and being disabled
+  if not enabled and currentModule == name and moduleSettingsFrame and moduleSettingsFrame:IsShown() then
+    moduleSettingsFrame:Hide()
+  end
+  
+  -- Print activation/deactivation message
+  local modInfo
+  for _, info in ipairs(MODULE_LIST) do
+    if info.name == name then
+      modInfo = info
+      break
+    end
+  end
+  local displayName = modInfo and L(modInfo.key) or name
+  if enabled then
+    EasyLife:Print("|cff00FF00" .. displayName .. "|r activated!", name)
+  else
+    EasyLife:Print("|cffFF6666" .. displayName .. "|r deactivated", name)
+  end
 end
+
+-- Sync module enabled states on load (ensures Module Manager state matches internal state)
+local function syncModuleStates()
+  local db = EasyLife:GetDB()
+  if not db then return end
+  db.enabledModules = db.enabledModules or {}
+  
+  local enabledModules = {}
+  
+  for _, modInfo in ipairs(MODULE_LIST) do
+    local name = modInfo.name
+    local moduleDBKey = MODULE_DB_KEYS[name]
+    if moduleDBKey then
+      local isEnabledInManager = db.enabledModules[name] == true
+      
+      -- Sync internal state from module manager state
+      if MODULE_USES_GLOBAL_DB[name] then
+        EasyLifeDB = EasyLifeDB or {}
+        EasyLifeDB[moduleDBKey] = EasyLifeDB[moduleDBKey] or {}
+        EasyLifeDB[moduleDBKey].enabled = isEnabledInManager
+      else
+        db[moduleDBKey] = db[moduleDBKey] or {}
+        db[moduleDBKey].enabled = isEnabledInManager
+      end
+      
+      -- Track enabled modules for login message
+      if isEnabledInManager then
+        table.insert(enabledModules, L(modInfo.key))
+      end
+      
+      -- Call UpdateState if available
+      local mod = EasyLife:GetModule(name)
+      if mod and mod.UpdateState then
+        C_Timer.After(0.5, function()
+          mod:UpdateState()
+        end)
+      end
+    end
+  end
+  
+  -- Print enabled modules to chat
+  if #enabledModules > 0 then
+    for _, moduleName in ipairs(enabledModules) do
+      -- Find the internal module name for linking
+      local internalName
+      for _, info in ipairs(MODULE_LIST) do
+        if L(info.key) == moduleName then
+          internalName = info.name
+          break
+        end
+      end
+      EasyLife:Print("|cff00FF00" .. moduleName .. "|r is |cff00FF00ON|r!", internalName)
+    end
+  else
+    EasyLife:Print("No modules enabled. Type |cff00CED1/el|r to open Module Manager.")
+  end
+end
+
+-- Initialize sync on load
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:SetScript("OnEvent", function()
+  C_Timer.After(1, syncModuleStates)
+end)
 
 -- Expose for minimap
 function EasyLife_Config_GetModuleList()
@@ -80,7 +207,7 @@ local function createMainFrame()
   local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
   closeBtn:SetPoint("TOPRIGHT", -4, -4)
   
-  -- Module list container
+  -- Module list container with scroll
   contentFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
   contentFrame:SetPoint("TOPLEFT", 20, -65)
   contentFrame:SetPoint("BOTTOMRIGHT", -20, 20)
@@ -92,12 +219,23 @@ local function createMainFrame()
   })
   contentFrame:SetBackdropColor(0.03, 0.03, 0.03, 0.9)
   
+  -- Create scroll frame
+  local scrollFrame = CreateFrame("ScrollFrame", nil, contentFrame, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetPoint("TOPLEFT", 4, -4)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -26, 4)
+  
+  -- Scroll child (content holder)
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollChild:SetWidth(scrollFrame:GetWidth() or 380)
+  scrollFrame:SetScrollChild(scrollChild)
+  
   -- Create module rows
+  local totalHeight = 0
   for i, modInfo in ipairs(MODULE_LIST) do
-    local row = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+    local row = CreateFrame("Frame", nil, scrollChild, "BackdropTemplate")
     row:SetHeight(50)
-    row:SetPoint("TOPLEFT", 8, -8 - (i-1) * 54)
-    row:SetPoint("TOPRIGHT", -8, -8 - (i-1) * 54)
+    row:SetPoint("TOPLEFT", 4, -4 - (i-1) * 54)
+    row:SetPoint("TOPRIGHT", -4, -4 - (i-1) * 54)
     row:SetBackdrop({
       bgFile = "Interface\\Buttons\\WHITE8x8",
       edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -149,7 +287,11 @@ local function createMainFrame()
     end)
     
     moduleRows[modInfo.name] = row
+    totalHeight = totalHeight + 54
   end
+  
+  -- Set scroll child height to fit all modules
+  scrollChild:SetHeight(totalHeight + 8)
   
   frame:Hide()
   tinsert(UISpecialFrames, "EasyLifeConfigFrame")

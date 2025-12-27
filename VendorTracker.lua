@@ -397,15 +397,41 @@ function VendorTracker:BuildConfigUI(parent)
   infoText:SetJustifyH("LEFT")
 end
 
+-- Store event frame reference for UpdateState
+local vendorEventFrame = nil
+
+-- Update module state (called when enabling/disabling from Module Manager)
+function VendorTracker:UpdateState()
+  local db = getDB()
+  
+  if not db.enabled then
+    -- Disable: hide display and unregister events
+    self:Hide()
+    if vendorEventFrame then
+      vendorEventFrame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
+      vendorEventFrame:UnregisterEvent("CHAT_MSG_LOOT")
+    end
+  else
+    -- Enable: register events and show if appropriate
+    if vendorEventFrame then
+      vendorEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+      vendorEventFrame:RegisterEvent("CHAT_MSG_LOOT")
+    end
+    self:Show()
+  end
+end
+
 -- Initialize
 function VendorTracker:OnRegister()
   -- Create event frame
-  local eventFrame = CreateFrame("Frame")
-  eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-  eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-  eventFrame:RegisterEvent("CHAT_MSG_LOOT")
+  vendorEventFrame = CreateFrame("Frame")
+  vendorEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  vendorEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+  vendorEventFrame:RegisterEvent("CHAT_MSG_LOOT")
   
-  eventFrame:SetScript("OnEvent", function(self, event, ...)
+  vendorEventFrame:SetScript("OnEvent", function(self, event, ...)
+    local db = getDB()
+    
     if event == "PLAYER_ENTERING_WORLD" then
       -- Hide any existing global frame first (in case it persisted from before reload)
       local existingFrame = _G["EasyLifeVendorTrackerFrame"]
@@ -424,9 +450,13 @@ function VendorTracker:OnRegister()
       end
       onZoneChanged()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
-      onZoneChanged()
+      if db.enabled then
+        onZoneChanged()
+      end
     elseif event == "CHAT_MSG_LOOT" then
-      onLootReceived(self, ...)
+      if db.enabled then
+        onLootReceived(self, ...)
+      end
     end
   end)
 end
